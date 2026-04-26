@@ -91,6 +91,72 @@ If `scan canvas` doesn't trigger the skill: type `/canvas-scan` explicitly. If h
 
 ---
 
+## Alternative auth: Playwright cookie path
+
+Use this if your school **disallows students from self-issuing personal access
+tokens**. The repo can read Canvas via the same browser session you use
+day-to-day, captured once via Playwright. The framework (`canvas-scan` /
+`canvas-execute` / `canvas-skip`) works identically under both modes.
+
+### One-time setup
+
+```bash
+pip install playwright
+python -m playwright install chromium
+```
+
+### `.env` for cookie mode
+
+```
+CANVAS_AUTH=cookie
+CANVAS_BASE=https://<your-school>.instructure.com/api/v1
+CANVAS_WEB_BASE=https://<your-school>.instructure.com
+# CANVAS_TOKEN not needed
+```
+
+### Capture cookies (run any time the session expires, ~1/day)
+
+```bash
+python -m src.canvas_login
+```
+
+A Chromium window opens at your school's Canvas login. **Complete SSO + 2FA
+manually** (the script intentionally doesn't try to drive school-specific SSO
+forms — they're all different). Once you see the Dashboard, return to the
+terminal and press Enter. The script writes `.cookies/canvas_session.json`
+(gitignored) containing the session cookie + a URL-unquoted CSRF token.
+
+### Verify
+
+```bash
+CANVAS_AUTH=cookie python -m src.canvas_client --probe
+```
+
+Should print your name + course list, identical to token-mode output.
+
+### When cookie expires
+
+The client raises `CanvasSessionExpired` on the first 401 with a clear message
+pointing back to `python -m src.canvas_login`. Re-run that command to refresh
+the cookie and continue.
+
+### Caveats for skills that submit
+
+This framework's `canvas_client` is read-only — submission code lives in
+whatever skills you author. If a skill of yours uses cookie auth to POST to
+Canvas, remember:
+
+- Cookie sessions expire (~1 day) — handle the `CanvasSessionExpired`
+  exception (or its 401 root cause) and tell the user to re-login.
+- Canvas POST endpoints generally require the `X-CSRF-Token` header. The
+  client sets it as a default session header, so any `requests` call that
+  reuses `_session` carries it automatically.
+- For Canvas's 3-step file upload, do NOT send the session cookie to the
+  S3-style upload URL in step 2 (use a fresh `requests.post` without the
+  shared session for that one call).
+
+---
+
 ## Troubleshooting
 
 **`setup.py` says "no placeholder" everywhere.** Either you already ran it, or your clone was rewritten by someone else on a different machine and they pushed the change. Check `git diff .claude/settings.json` — if the path inside isn't `__PROJECT_ROOT__` and isn't yours either, fix manually.

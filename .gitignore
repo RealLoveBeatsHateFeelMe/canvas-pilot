@@ -11,3 +11,6 @@ __pycache__/
 # email, instructor names, etc.). Skills reference this file but the file
 # itself is local-only. Recreate from SECRETS.example.md when bootstrapping.
 SECRETS.md
+
+# Canvas cookie auth (CANVAS_AUTH=cookie) — live session cookies, NEVER commit
+.cookies/

@@ -6,13 +6,22 @@ no submission code here on purpose. The framework's job is to scan and
 plan; if your skills want to submit anything to Canvas, they do that
 themselves with their own preferred method.
 
+Two auth modes (controlled by `CANVAS_AUTH` env var, default `token`):
+
+- `token`  — Bearer token from `CANVAS_TOKEN`. Use when your school lets
+             you self-issue a personal access token.
+- `cookie` — alternative for schools that disallow self-issued tokens.
+             Reads `.cookies/canvas_session.json` written by
+             `python -m src.canvas_login`. A 401 raises
+             `CanvasSessionExpired` pointing back to canvas_login.
+
 Usage:
     python -m src.canvas_client --probe
     python -m src.canvas_client --courses
     python -m src.canvas_client --assignments <course_id>
 
-Configuration: reads CANVAS_TOKEN and CANVAS_BASE from `.env` at the repo
-root. See `.env.example` for the format.
+Configuration: reads `CANVAS_AUTH` / `CANVAS_TOKEN` / `CANVAS_BASE` from
+`.env` at the repo root. See `.env.example`.
 """
 from __future__ import annotations
 
@@ -43,12 +52,24 @@ def _load_env() -> None:
 
 _load_env()
 
+
+class CanvasSessionExpired(RuntimeError):
+    """Cookie-mode session expired (401). Re-run `python -m src.canvas_login`."""
+
+
+AUTH_MODE = os.environ.get("CANVAS_AUTH", "token").strip().lower()
 TOKEN = os.environ.get("CANVAS_TOKEN", "")
 BASE = os.environ.get("CANVAS_BASE", "https://canvas.instructure.com/api/v1").rstrip("/")
 
-if not TOKEN:
+if AUTH_MODE not in ("token", "cookie"):
     raise RuntimeError(
-        "CANVAS_TOKEN not set. Copy .env.example to .env and add your token."
+        f"CANVAS_AUTH must be 'token' or 'cookie', got: {AUTH_MODE!r}"
+    )
+
+if AUTH_MODE == "token" and not TOKEN:
+    raise RuntimeError(
+        "CANVAS_TOKEN not set. Copy .env.example to .env and add your token, "
+        "or set CANVAS_AUTH=cookie and run `python -m src.canvas_login`."
     )
 
 _session = requests.Session()
@@ -58,8 +79,39 @@ _session = requests.Session()
 _session.headers.update({
     "User-Agent": "canvas-pilot/1.0",
     "Accept": "application/json+canvas-string-ids, application/json",
-    "Authorization": f"Bearer {TOKEN}",
 })
+
+if AUTH_MODE == "token":
+    _session.headers["Authorization"] = f"Bearer {TOKEN}"
+else:
+    cookie_path = ROOT / ".cookies" / "canvas_session.json"
+    if not cookie_path.exists():
+        raise RuntimeError(
+            f"CANVAS_AUTH=cookie but {cookie_path} not found. "
+            f"Run: python -m src.canvas_login"
+        )
+    cookie_data = json.loads(cookie_path.read_text(encoding="utf-8"))
+    _session.cookies.set(
+        cookie_data["session_cookie_name"],
+        cookie_data["session_cookie_value"],
+        domain=cookie_data["domain"],
+        path="/",
+    )
+    # Canvas CSRF token is session-scoped; same value works for the lifetime
+    # of the session. Setting it as a default header is harmless on GETs
+    # (Canvas ignores it) and saves a per-request hook. The value stored in
+    # canvas_session.json is already URL-unquoted by canvas_login.py — do
+    # NOT unquote again here (would corrupt tokens that legitimately
+    # contain '%').
+    _session.headers["X-CSRF-Token"] = cookie_data["csrf_token"]
+
+    def _detect_session_expired(resp, *args, **kwargs):
+        if resp.status_code == 401:
+            raise CanvasSessionExpired(
+                "Canvas session cookie expired (401). "
+                "Re-run: python -m src.canvas_login"
+            )
+    _session.hooks["response"].append(_detect_session_expired)
 
 
 def _parse_link_header(header: str) -> dict[str, str]:
