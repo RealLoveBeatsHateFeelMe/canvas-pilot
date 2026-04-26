@@ -21,12 +21,14 @@ automate them):
 The CSRF token is unquoted ONCE here at capture time; canvas_client.py does NOT
 re-unquote when it loads, so tokens that legitimately contain '%' aren't corrupted.
 
-First run: full SSO + 2FA, ~5 minutes. Tick "Remember this device for 30 days"
-  on the 2FA prompt — that's the difference between "click through daily" and
-  "redo full 2FA daily".
-Subsequent runs: ~15 seconds. The browser profile remembers your trusted-device
-  state, auto-redirects through SSO, lands on Dashboard, you press Enter.
-Every ~30 days: 2FA again when the trust window expires. Re-tick the box.
+First run: complete SSO + 2FA in the browser, press Enter. ~5 min.
+Subsequent runs (when the Canvas session cookie expires, ~24h):
+  - If the user ticked "Remember this device" on the first run's 2FA page
+    (most providers offer this; not all schools enable it): ~15 seconds —
+    browser auto-redirects through SSO, no 2FA push, press Enter.
+  - Otherwise: full ceremony again (~5 min). Functionally identical, just
+    slower. Cookie auth works fine without remember-me; it's just a
+    convenience optimization.
 If wedged: `rm -rf .cookies/playwright-profile/` and re-run.
 """
 from __future__ import annotations
@@ -99,9 +101,10 @@ def main() -> int:
     print(f"  Profile dir: {profile_dir}")
     print()
     print("In the browser window:")
-    print("  1. If SSO / 2FA prompts appear, complete them.")
-    print("     ↳ FIRST RUN: tick \"Remember this device for 30 days\" on the")
-    print("       2FA page so subsequent runs skip 2FA (until that window expires).")
+    print("  1. Complete SSO / 2FA if prompted.")
+    print("     (Optional: if 2FA shows a 'Remember this device' / 'Trust")
+    print("      browser' checkbox, ticking it lets subsequent runs skip 2FA")
+    print("      until that window expires. Not required — daily 2FA also works.)")
     print("  2. Wait until your Canvas Dashboard appears.")
     print("  3. Switch back here and press Enter.")
     print()

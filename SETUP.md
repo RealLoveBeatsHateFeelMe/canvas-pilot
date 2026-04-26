@@ -83,15 +83,20 @@ python -m src.canvas_login
 A Chromium window opens at your school's Canvas login. **First run** (full SSO + 2FA expected):
 
 1. Log in normally (school username, password)
-2. On the 2FA page (Duo / Microsoft Authenticator / etc.), **tick "Remember this device for 30 days"** before approving — this is the difference between "click through daily" and "redo full 2FA daily"
+2. Complete 2FA (Duo push / Microsoft Authenticator / etc.)
 3. Wait until your Canvas Dashboard appears
-4. Switch to the terminal and **press Enter** — that signals "I'm logged in, capture cookies now". The script then visits `/profile/settings` to refresh the CSRF token, reads the relevant cookies, writes them to `.cookies/canvas_session.json`, and saves the browser profile (with Duo trust state) under `.cookies/playwright-profile/`.
+4. Switch to the terminal and **press Enter** — that signals "I'm logged in, capture cookies now". The script then visits `/profile/settings` to refresh the CSRF token, reads the relevant cookies, writes them to `.cookies/canvas_session.json`, and saves the browser profile under `.cookies/playwright-profile/`.
+
+> **Optional convenience**: if the 2FA page has a "Remember this device" / "Trust this browser" / "Don't ask again" checkbox, ticking it (before approving) lets subsequent runs skip 2FA for some window — typically 30 days. **It's optional, not required.** Without it, you just do full 2FA every time the Canvas cookie expires (~daily). Same functionality either way.
 
 Both `.cookies/canvas_session.json` and `.cookies/playwright-profile/` are gitignored.
 
-**Subsequent runs** (Canvas session cookie expires every ~24 h): same command. Because the browser profile persists, the new browser opens already trusted by Duo, auto-redirects through SSO, and lands on Dashboard with no 2FA prompt. You press Enter, ~15 seconds total.
+**Subsequent runs** (Canvas session cookie expires every ~24 h): same command, `python -m src.canvas_login`.
 
-**Every ~30 days**: full Duo ceremony again when the "Remember this device" trust expires. Re-tick the 30-day box.
+- If you ticked "Remember device" on first run: browser auto-redirects through SSO, no 2FA push, you press Enter. **~15 seconds.**
+- If you didn't tick (or your school doesn't offer the option): full ceremony again — username, password, 2FA push, Approve, Enter. **~5 minutes.** Functionally identical, just slower.
+
+**When the remember-device window expires** (typically 30 days for Duo): full ceremony anyway. Re-tick if you want another 30 days of fast logins.
 
 **If something gets wedged** (corrupt profile, mysterious login loop): `rm -rf .cookies/playwright-profile/`. One full SSO and you're back.
 
