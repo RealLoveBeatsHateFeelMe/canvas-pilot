@@ -9,7 +9,10 @@ Flow (semi-manual on purpose — SSO selectors vary per school, so we don't try 
 automate them):
 
   1. Reads CANVAS_WEB_BASE from .env (or derives from CANVAS_BASE).
-  2. Opens a headed Chromium window and navigates to the Canvas login page.
+  2. Opens a headed Chromium window using a PERSISTENT browser profile at
+     `.cookies/playwright-profile/`. Persistence carries Duo / SSO IDP
+     "remember this device" trust cookies between runs, so subsequent runs
+     skip the 2FA push (until the 30-day Duo trust window expires).
   3. Waits for you to complete SSO + 2FA in the window manually.
   4. After you press Enter, captures `_normandy_session` and `_csrf_token`
      cookies, URL-unquotes the CSRF token (Canvas writes 422 if unquoted with %),
@@ -17,6 +20,14 @@ automate them):
 
 The CSRF token is unquoted ONCE here at capture time; canvas_client.py does NOT
 re-unquote when it loads, so tokens that legitimately contain '%' aren't corrupted.
+
+First run: full SSO + 2FA, ~5 minutes. Tick "Remember this device for 30 days"
+  on the 2FA prompt — that's the difference between "click through daily" and
+  "redo full 2FA daily".
+Subsequent runs: ~15 seconds. The browser profile remembers your trusted-device
+  state, auto-redirects through SSO, lands on Dashboard, you press Enter.
+Every ~30 days: 2FA again when the trust window expires. Re-tick the box.
+If wedged: `rm -rf .cookies/playwright-profile/` and re-run.
 """
 from __future__ import annotations
 
@@ -81,24 +92,37 @@ def main() -> int:
         )
         return 1
 
+    profile_dir = ROOT / ".cookies" / "playwright-profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
     print(f"Opening browser to {web_base}/login")
+    print(f"  Profile dir: {profile_dir}")
     print()
-    print("  1. Complete SSO + 2FA in the browser window")
-    print("  2. Wait until you see your Canvas Dashboard")
-    print("  3. Come back here and press Enter to capture cookies")
+    print("In the browser window:")
+    print("  1. If SSO / 2FA prompts appear, complete them.")
+    print("     ↳ FIRST RUN: tick \"Remember this device for 30 days\" on the")
+    print("       2FA page so subsequent runs skip 2FA (until that window expires).")
+    print("  2. Wait until your Canvas Dashboard appears.")
+    print("  3. Switch back here and press Enter.")
     print()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
+        # Persistent context: cookies + localStorage + IndexedDB + Duo trust
+        # state survive between runs. New context returned directly (not a
+        # Browser wrapper), so close() is on the context.
+        context = p.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            headless=False,
+        )
+        # Persistent context launches with a default page already attached.
+        page = context.pages[0] if context.pages else context.new_page()
         page.goto(f"{web_base}/login")
 
         try:
             input("Press Enter once you see the Canvas Dashboard... ")
         except (EOFError, KeyboardInterrupt):
             print("Aborted.", file=sys.stderr)
-            browser.close()
+            context.close()
             return 1
 
         # Visit /profile/settings to ensure _csrf_token is set on the response.
@@ -110,7 +134,7 @@ def main() -> int:
             pass  # not fatal; cookies should still be present
 
         cookies = context.cookies()
-        browser.close()
+        context.close()
 
     session_cookie = next(
         (c for c in cookies if c["name"] == "_normandy_session"), None

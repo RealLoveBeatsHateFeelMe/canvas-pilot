@@ -1,159 +1,145 @@
 # SETUP — first run on a fresh clone
 
-Bootstrap walkthrough. Five steps, ~5 minutes.
+Bootstrap walkthrough. ~5 min for token mode, ~10 min for cookie mode (first run; ~15 sec subsequent runs).
 
-Assumptions: you have [Claude Code](https://claude.com/claude-code) installed and Python 3.11+. The hook scripts under `.claude/hooks/` use only stdlib + cross-platform path handling, so macOS/Linux work alongside Windows.
+Assumptions: [Claude Code](https://claude.com/claude-code) installed, Python 3.11+. The hook scripts under `.claude/hooks/` use only stdlib + cross-platform path handling, so macOS / Linux / Windows all work.
 
 ---
 
-## 1. Get a Canvas API token
+## 1. Choose your auth mode (do this first)
 
-In your Canvas instance, click your avatar (top-left) → **Settings** → scroll to **Approved Integrations** → **+ New Access Token**. Name it whatever (e.g. `canvas-pilot`). Copy the token — you only see it once.
+In your Canvas instance:
 
-## 2. Configure `.env`
+1. Click your avatar (top-left) → **Settings**
+2. Scroll to **Approved Integrations**
+3. Look at the **+ New Access Token** button.
+
+| What you see | What it means | Go to |
+|---|---|---|
+| Button is clickable, lets you generate a token | Your school allows self-issued tokens | **§2A — Token mode** |
+| Button is missing, greyed out, errors with "permission denied", or generated tokens get auto-revoked | Your school disabled student-issued tokens (common at some private universities, K-12 districts, schools enforcing OAuth-only) | **§2B — Cookie mode** |
+
+Both modes give you the same `canvas-scan` / `canvas-execute` framework. The trade-offs:
+
+| | Token | Cookie |
+|---|---|---|
+| Setup time | 1 min | 5–10 min first run, ~15 sec/day after |
+| Auth lifetime | ~1 year | ~24 h (re-login daily; ~15 sec with persistent profile) |
+| Browser dependency | None | Headless Chromium (~150 MB, one-time install) |
+| Submission helpers in framework | n/a (not shipped here) | n/a (not shipped here) |
+
+---
+
+## 2A. Token mode
+
+Click **+ New Access Token**. Name it whatever (e.g. `canvas-pilot`). **Copy the token now — Canvas only shows it once.**
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and fill in:
-
-- `CANVAS_TOKEN` — your token from step 1
-- `CANVAS_BASE` — your school's Canvas API base. Default is `https://canvas.instructure.com/api/v1`; change to `https://canvas.<school>.edu/api/v1` if your school self-hosts.
-
-## 3. Install deps + rewrite paths
-
-```bash
-pip install requests pyyaml
-python setup.py
-```
-
-`setup.py` auto-detects where you cloned the repo and replaces the `__PROJECT_ROOT__` placeholder in `.claude/settings.json` so hook commands work. Idempotent — safe to re-run.
-
-> Don't commit the resulting `.claude/settings.json` back upstream — it now contains your local path. `git diff` shows exactly what got rewritten.
-
-## 4. Probe Canvas, then configure `courses.yaml` + `SECRETS.md`
-
-This is where you tell the framework which courses to scan. **Don't go look up course IDs by hand** — Canvas gives them to you for free:
-
-```bash
-python -m src.canvas_client --probe
-```
-
-Output looks like:
+Edit `.env`:
 
 ```
-OK Canvas user: Your Name (id=12345678)
-4 active courses:
-  82062 | AC-ENG-20A | Academic English 20A
-  81271 | ICS-33    | Programming in Python
-  81489 | INTL-101  | Intro to Global Studies
-  82257 | MATH-2B   | Calculus
+CANVAS_AUTH=token
+CANVAS_TOKEN=<paste-here>
+CANVAS_BASE=https://canvas.<your-school>.edu/api/v1
 ```
 
-That's everything you need. From this output:
+If your school uses a generic Canvas-cloud host, `CANVAS_BASE` looks like `https://<school>.instructure.com/api/v1` instead — check the URL bar when you're in Canvas.
 
-- The `id=...` after your name is your Canvas `user_id` — paste it into `SECRETS.md` (after `cp SECRETS.example.md SECRETS.md`).
-- The course list gives you all the IDs and short codes. Pick the courses you want the framework to scan and add them to `courses.yaml`:
-
-  ```yaml
-  routes:
-    81271:
-      name: "ICS 33"           # any short label you like
-      skill: canvas-skip       # see note below
-    81489:
-      name: "INTL 101"
-      skill: canvas-skip
-  pending_window_days: 7
-  ```
-
-**About the `skill` field**: the framework ships with `canvas-scan`, `canvas-execute`, and `canvas-skip` — but **no course-specific skills**. For the first run, route every course to `canvas-skip` (the generic "log to todo.md" fallback). That's enough to verify the framework end-to-end. Then read [README.md § How to write your own skill](./README.md#how-to-write-your-own-skill) and replace `canvas-skip` with your own skill names as you author them.
-
-> If you're letting Claude Code do this setup interactively, you can hand it your token + Canvas domain and it will run probe, present the course list, and ask you which to include before writing the files. Don't let it ask you for course IDs by hand — that's what probe is for.
-
-## 5. Test
-
-Open this folder in Claude Code (`claude` from the repo root). When the session starts, the SessionStart hook injects context so CC knows it's in a Canvas Pilot project. Then say:
-
-```
-scan canvas
-```
-
-CC invokes `canvas-scan`, hits Canvas with your token, and produces:
-
-- `runs/<today>/assignments.json` — raw pending list
-- `runs/<today>/plan.json` — bucketed plan
-- A markdown table in the chat showing what's pending
-
-**It stops there — nothing is dispatched.** Review the plan; reply with approval (e.g. `all`, `1, 3, 5`, `urgent only`, `skip`) to invoke `canvas-execute`, which routes each approved item to its skill.
-
-If `scan canvas` doesn't trigger the skill: type `/canvas-scan` explicitly. If hooks aren't firing (no SessionStart context message at the top), re-check that `python setup.py` actually rewrote `.claude/settings.json` (look for any remaining `__PROJECT_ROOT__` strings).
+Continue to §3.
 
 ---
 
-## Alternative auth: Playwright cookie path
+## 2B. Cookie mode
 
-Use this if your school **disallows students from self-issuing personal access
-tokens**. The repo can read Canvas via the same browser session you use
-day-to-day, captured once via Playwright. The framework (`canvas-scan` /
-`canvas-execute` / `canvas-skip`) works identically under both modes.
-
-### One-time setup
+Install Playwright + a Chromium binary (one-time, ~150 MB):
 
 ```bash
 pip install playwright
 python -m playwright install chromium
 ```
 
-### `.env` for cookie mode
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
 
 ```
 CANVAS_AUTH=cookie
-CANVAS_BASE=https://<your-school>.instructure.com/api/v1
-CANVAS_WEB_BASE=https://<your-school>.instructure.com
-# CANVAS_TOKEN not needed
+CANVAS_BASE=https://canvas.<your-school>.edu/api/v1
+CANVAS_WEB_BASE=https://canvas.<your-school>.edu
+# CANVAS_TOKEN unused — leave blank or remove the line.
 ```
 
-### Capture cookies (run any time the session expires, ~1/day)
+Capture your first cookie:
 
 ```bash
 python -m src.canvas_login
 ```
 
-A Chromium window opens at your school's Canvas login. **Complete SSO + 2FA
-manually** (the script intentionally doesn't try to drive school-specific SSO
-forms — they're all different). Once you see the Dashboard, return to the
-terminal and press Enter. The script writes `.cookies/canvas_session.json`
-(gitignored) containing the session cookie + a URL-unquoted CSRF token.
+A Chromium window opens at your school's Canvas login. **First run** (full SSO + 2FA expected):
 
-### Verify
+1. Log in normally (school username, password)
+2. On the 2FA page (Duo / Microsoft Authenticator / etc.), **tick "Remember this device for 30 days"** before approving — this is the difference between "click through daily" and "redo full 2FA daily"
+3. Wait until your Canvas Dashboard appears
+4. Switch to the terminal and **press Enter** — that signals "I'm logged in, capture cookies now". The script then visits `/profile/settings` to refresh the CSRF token, reads the relevant cookies, writes them to `.cookies/canvas_session.json`, and saves the browser profile (with Duo trust state) under `.cookies/playwright-profile/`.
+
+Both `.cookies/canvas_session.json` and `.cookies/playwright-profile/` are gitignored.
+
+**Subsequent runs** (Canvas session cookie expires every ~24 h): same command. Because the browser profile persists, the new browser opens already trusted by Duo, auto-redirects through SSO, and lands on Dashboard with no 2FA prompt. You press Enter, ~15 seconds total.
+
+**Every ~30 days**: full Duo ceremony again when the "Remember this device" trust expires. Re-tick the 30-day box.
+
+**If something gets wedged** (corrupt profile, mysterious login loop): `rm -rf .cookies/playwright-profile/`. One full SSO and you're back.
+
+Continue to §3.
+
+---
+
+## 3. Configure SECRETS.md + courses.yaml
 
 ```bash
-CANVAS_AUTH=cookie python -m src.canvas_client --probe
+cp SECRETS.example.md SECRETS.md
 ```
 
-Should print your name + course list, identical to token-mode output.
+Edit `SECRETS.md` — minimum to scan:
+- Your Canvas user_id (from `python -m src.canvas_client --probe`, after §5)
+- Active courses table — `course_id`, name, which skill should handle each.
 
-### When cookie expires
+Edit `courses.yaml` — `course_id → skill` routing. For first run you can route every course to `canvas-skip` (logs to todo.md) until you write per-course skills.
 
-The client raises `CanvasSessionExpired` on the first 401 with a clear message
-pointing back to `python -m src.canvas_login`. Re-run that command to refresh
-the cookie and continue.
+## 4. Rewrite hardcoded paths
 
-### Caveats for skills that submit
+```bash
+python setup.py
+```
 
-This framework's `canvas_client` is read-only — submission code lives in
-whatever skills you author. If a skill of yours uses cookie auth to POST to
-Canvas, remember:
+`setup.py` rewrites the `__PROJECT_ROOT__` placeholder in `.claude/settings.json` so hook commands point at the right files for your local clone. Idempotent — safe to re-run.
 
-- Cookie sessions expire (~1 day) — handle the `CanvasSessionExpired`
-  exception (or its 401 root cause) and tell the user to re-login.
-- Canvas POST endpoints generally require the `X-CSRF-Token` header. The
-  client sets it as a default session header, so any `requests` call that
-  reuses `_session` carries it automatically.
-- For Canvas's 3-step file upload, do NOT send the session cookie to the
-  S3-style upload URL in step 2 (use a fresh `requests.post` without the
-  shared session for that one call).
+> Don't commit the resulting changes — they're machine-local. `git diff` after `setup.py` shows exactly what got rewritten.
+
+## 5. Install Python deps
+
+```bash
+pip install requests pymupdf python-dotenv pyyaml
+```
+
+(Cookie mode users already installed `playwright` in §2B. The extras above are used by various skills for PDF parsing / dotenv loading.)
+
+## 6. Test
+
+In Claude Code (`claude` from the repo root):
+
+```
+scan canvas
+```
+
+CC invokes `canvas-scan`, hits Canvas with your auth, produces `runs/<today>/plan.json` plus a markdown table of pending work. **It stops there — nothing is submitted.** Review the plan, reply with approval (`all` / `1, 3, 5` / `urgent only` / `skip`) to trigger `canvas-execute`.
+
+If `scan canvas` doesn't trigger the skill, type `/canvas-scan` explicitly. If hooks aren't firing (no SessionStart context message at the top), re-check that `python setup.py` actually rewrote `.claude/settings.json`.
 
 ---
 
@@ -163,10 +149,12 @@ Canvas, remember:
 
 **Hooks don't fire.** Open `.claude/settings.json`, confirm every `command` field has your absolute path, and that the `.claude/hooks/*.py` files exist. Try `python .claude/hooks/inject-context.py` manually — if it crashes, fix the import / path issue before re-running CC.
 
-**`CANVAS_TOKEN not set` from `canvas_client.py`.** `.env` not loaded. Make sure you copied `.env.example` to `.env` (not just edited the example) and that the token line is `CANVAS_TOKEN=...` with no quotes around the value.
+**`CANVAS_TOKEN not set`** in token mode. `.env` not loaded, or you set `CANVAS_AUTH=token` but didn't paste the token. Make sure you copied `.env.example` to `.env` (not just edited the example) and the token line has no quotes around the value.
 
-**`raise_for_status()` 401 on probe.** Token is wrong or expired, or `CANVAS_BASE` doesn't match your school's host. Test with `curl -H "Authorization: Bearer $TOKEN" $CANVAS_BASE/users/self`.
+**`CanvasSessionExpired`** from cookie mode. The Canvas session cookie expired (typically ~24 h). Re-run `python -m src.canvas_login`.
 
-**Stop hook keeps blocking session end.** It's enforcing the "every assignment has a result.json" gate. Either finish the dispatch (re-invoke `canvas-execute`), or write `result.json` files manually with `status: skipped, deferred_to_next_run: true, notes: "<reason>"` for the items you don't want to handle this run. As a last resort, delete `runs/<today>/.scan_in_progress` to disarm the gate (fine if you're cleaning up, bad if you have unfinished real work).
+**Cookie capture fails (`_normandy_session cookie not found`).** Login probably didn't reach Dashboard before you hit Enter, or the SSO chain stalled. Check the browser — make sure you're at the actual Canvas Dashboard URL (e.g. `canvas.<your-school>.edu/?login_success=1`) before pressing Enter. If the SSO loop won't complete, delete `.cookies/playwright-profile/` and try again.
 
-**Different OS.** The hook commands in `.claude/settings.json` use `python` (not `python3`). On macOS/Linux you may need to `ln -s $(which python3) /usr/local/bin/python` or hand-edit settings.json. The scripts themselves are platform-independent.
+**`raise_for_status()` 401 on probe.** Token is wrong/expired (token mode), or the cookie file's session value got invalidated server-side (cookie mode). Token: regenerate in Approved Integrations. Cookie: re-run `canvas_login`.
+
+**Different OS.** The hook commands in `.claude/settings.json` use `python` (not `python3`). On macOS/Linux you may need to symlink `python` → `python3` or hand-edit settings.json. The scripts themselves are platform-independent.
