@@ -1,0 +1,30 @@
+# Canvas course_id → skill routing.
+#
+# This is the routing table the framework uses to decide which of YOUR
+# skills handles each Canvas course. Edit it once per quarter, when
+# courses come and go.
+#
+# Each entry has:
+#   - course_id (the integer Canvas uses, find via the probe step in SETUP.md)
+#   - name (a short label you'll see in plan tables)
+#   - skill (the name of the skill in .claude/skills/ that handles this course)
+#
+# The framework SHIPS WITH NO COURSE SKILLS — only the scan/execute/skip
+# scaffolding. You write a SKILL.md for each repeating assignment type
+# you want to automate (e.g. canvas-mycode, canvas-myreading, canvas-myquiz),
+# and reference its name here.
+#
+# Example template (replace with your actual courses):
+
+routes:
+  # 12345:
+  #   name: "Course Short Label"
+  #   skill: canvas-mycode
+  #   # optional: per-assignment overrides (run a different skill for some items)
+  #   # overrides:
+  #   #   - match: { submission_types: ["online_quiz"] }
+  #   #     skill: canvas-myquiz
+
+# How far ahead to scan. The scan skill ignores anything due more than
+# this many days from now.
+pending_window_days: 7

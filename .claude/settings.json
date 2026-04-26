@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"__PROJECT_ROOT__/.claude/hooks/inject-context.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"__PROJECT_ROOT__/.claude/hooks/check-result-schema.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"__PROJECT_ROOT__/.claude/hooks/check-router-complete.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

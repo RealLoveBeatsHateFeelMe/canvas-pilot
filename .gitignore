@@ -1,0 +1,13 @@
+.env
+runs/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Hook error log (debug only)
+.claude/hooks/hook-errors.log
+
+# SECRETS.md — per-user/per-quarter identifiers (course IDs, file IDs,
+# email, instructor names, etc.). Skills reference this file but the file
+# itself is local-only. Recreate from SECRETS.example.md when bootstrapping.
+SECRETS.md
