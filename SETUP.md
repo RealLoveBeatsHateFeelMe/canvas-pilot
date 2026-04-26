@@ -1,8 +1,8 @@
 # SETUP — first run on a fresh clone
 
-Bootstrap walkthrough. Six steps, ~10 minutes including filling in your courses.
+Bootstrap walkthrough. Five steps, ~5 minutes.
 
-Assumptions: you have [Claude Code](https://claude.com/claude-code) installed and Python 3.11+. The hook scripts under `.claude/hooks/` are written for Windows but use only stdlib + cross-platform path handling, so macOS/Linux should work too.
+Assumptions: you have [Claude Code](https://claude.com/claude-code) installed and Python 3.11+. The hook scripts under `.claude/hooks/` use only stdlib + cross-platform path handling, so macOS/Linux work alongside Windows.
 
 ---
 
@@ -21,56 +21,57 @@ Open `.env` and fill in:
 - `CANVAS_TOKEN` — your token from step 1
 - `CANVAS_BASE` — your school's Canvas API base. Default is `https://canvas.instructure.com/api/v1`; change to `https://canvas.<school>.edu/api/v1` if your school self-hosts.
 
-## 3. Configure `SECRETS.md`
-
-```bash
-cp SECRETS.example.md SECRETS.md
-```
-
-Open `SECRETS.md` and fill in at minimum:
-
-- Your Canvas user_id (run `python -m src.canvas_client --probe` after step 4 to find it).
-- A row in the **Active courses** table for each course you want the framework to scan. Each row needs `course_id`, name, and `skill` (the skill name from `.claude/skills/canvas-*/`).
-
-The other sections (per-course details) can stay as templates until you actually need them — they're useful as a paste-target when you discover the real spec location for a course.
-
-## 4. Rewrite hardcoded paths
-
-The hook commands in `.claude/settings.json` need absolute paths to this clone's location. Run:
-
-```bash
-python setup.py
-```
-
-It auto-detects where you cloned the repo and replaces the `__PROJECT_ROOT__` placeholder. Idempotent — safe to re-run.
-
-> Don't commit the resulting changes back to upstream — they're machine-local. `git diff .claude/settings.json` shows exactly what got rewritten if you want to verify.
-
-## 5. Install Python deps
+## 3. Install deps + rewrite paths
 
 ```bash
 pip install requests pyyaml
+python setup.py
 ```
 
-That's it for the framework's own deps. If you write skills that need more (e.g. PyMuPDF for PDF work, requests-html for scraping), `pip install` them as needed.
+`setup.py` auto-detects where you cloned the repo and replaces the `__PROJECT_ROOT__` placeholder in `.claude/settings.json` so hook commands work. Idempotent — safe to re-run.
 
-## 6. Configure your courses
+> Don't commit the resulting `.claude/settings.json` back upstream — it now contains your local path. `git diff` shows exactly what got rewritten.
 
-Edit `courses.yaml`. Each entry maps a course_id to a skill:
+## 4. Probe Canvas, then configure `courses.yaml` + `SECRETS.md`
 
-```yaml
-routes:
-  12345:
-    name: "Course Short Label"
-    skill: canvas-mycode
-pending_window_days: 7
+This is where you tell the framework which courses to scan. **Don't go look up course IDs by hand** — Canvas gives them to you for free:
+
+```bash
+python -m src.canvas_client --probe
 ```
 
-The skill names you reference here must correspond to skills under `.claude/skills/canvas-*/SKILL.md`. The framework ships with `canvas-scan`, `canvas-execute`, and `canvas-skip` (a generic "log to todo" fallback), but **no course-specific skills**. You write those yourself — see [README.md § How to write your own skill](./README.md#how-to-write-your-own-skill).
+Output looks like:
 
-If you don't have any skills yet, route everything to `canvas-skip` for the first run. The framework will scan, list what's pending, and on approval log them to `runs/<today>/todo.md` so you can do them by hand. That's enough to verify the framework is working end-to-end before you commit to writing skills.
+```
+OK Canvas user: Your Name (id=12345678)
+4 active courses:
+  82062 | AC-ENG-20A | Academic English 20A
+  81271 | ICS-33    | Programming in Python
+  81489 | INTL-101  | Intro to Global Studies
+  82257 | MATH-2B   | Calculus
+```
 
-## Test
+That's everything you need. From this output:
+
+- The `id=...` after your name is your Canvas `user_id` — paste it into `SECRETS.md` (after `cp SECRETS.example.md SECRETS.md`).
+- The course list gives you all the IDs and short codes. Pick the courses you want the framework to scan and add them to `courses.yaml`:
+
+  ```yaml
+  routes:
+    81271:
+      name: "ICS 33"           # any short label you like
+      skill: canvas-skip       # see note below
+    81489:
+      name: "INTL 101"
+      skill: canvas-skip
+  pending_window_days: 7
+  ```
+
+**About the `skill` field**: the framework ships with `canvas-scan`, `canvas-execute`, and `canvas-skip` — but **no course-specific skills**. For the first run, route every course to `canvas-skip` (the generic "log to todo.md" fallback). That's enough to verify the framework end-to-end. Then read [README.md § How to write your own skill](./README.md#how-to-write-your-own-skill) and replace `canvas-skip` with your own skill names as you author them.
+
+> If you're letting Claude Code do this setup interactively, you can hand it your token + Canvas domain and it will run probe, present the course list, and ask you which to include before writing the files. Don't let it ask you for course IDs by hand — that's what probe is for.
+
+## 5. Test
 
 Open this folder in Claude Code (`claude` from the repo root). When the session starts, the SessionStart hook injects context so CC knows it's in a Canvas Pilot project. Then say:
 
