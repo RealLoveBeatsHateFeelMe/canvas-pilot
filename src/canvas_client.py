@@ -1,10 +1,8 @@
 """Canvas LMS API client (read-only).
 
-This client only exposes GET endpoints — listing courses, assignments,
-files, modules, pages, folders, plus a generic `download_file`. There is
-no submission code here on purpose. The framework's job is to scan and
-plan; if your skills want to submit anything to Canvas, they do that
-themselves with their own preferred method.
+This client exposes GET endpoints only — listing courses, assignments,
+files, modules, pages, folders, plus a generic `download_file`. The
+framework's job is to scan and plan.
 
 Two auth modes (controlled by `CANVAS_AUTH` env var, default `token`):
 

@@ -26,7 +26,6 @@ Both modes give you the same `canvas-scan` / `canvas-execute` framework. The tra
 | Setup time | 1 min | 5–10 min first run, ~15 sec/day after |
 | Auth lifetime | ~1 year | ~24 h (re-login daily; ~15 sec with persistent profile) |
 | Browser dependency | None | Headless Chromium (~150 MB, one-time install) |
-| Submission helpers in framework | n/a (not shipped here) | n/a (not shipped here) |
 
 ---
 
@@ -104,17 +103,15 @@ Continue to §3.
 
 ---
 
-## 3. Configure SECRETS.md + courses.yaml
+## 3. Let Claude Code populate your config
 
 ```bash
 cp SECRETS.example.md SECRETS.md
 ```
 
-Edit `SECRETS.md` — minimum to scan:
-- Your Canvas user_id (from `python -m src.canvas_client --probe`, after §5)
-- Active courses table — `course_id`, name, which skill should handle each.
+That's the only manual step. **Don't look up your course IDs by hand** — Claude Code will fill in `courses.yaml` and the `Active courses` table in `SECRETS.md` for you on first scan (§6). It runs `python -m src.canvas_client --probe`, lists your courses by name, asks which to handle, and writes the entries.
 
-Edit `courses.yaml` — `course_id → skill` routing. For first run you can route every course to `canvas-skip` (logs to todo.md) until you write per-course skills.
+If you want to do it manually anyway, the schema is documented in `SECRETS.example.md` and `courses.yaml`.
 
 ## 4. Rewrite hardcoded paths
 
@@ -129,10 +126,10 @@ python setup.py
 ## 5. Install Python deps
 
 ```bash
-pip install requests pymupdf python-dotenv pyyaml
+pip install requests
 ```
 
-(Cookie mode users already installed `playwright` in §2B. The extras above are used by various skills for PDF parsing / dotenv loading.)
+That's the only hard dependency for the framework. Add others as your own skills need them (e.g. `pyyaml` for richer YAML manipulation, `pymupdf` if a skill parses PDFs). Cookie-mode users already installed `playwright` in §2B.
 
 ## 6. Test
 
@@ -142,7 +139,7 @@ In Claude Code (`claude` from the repo root):
 scan canvas
 ```
 
-CC invokes `canvas-scan`, hits Canvas with your auth, produces `runs/<today>/plan.json` plus a markdown table of pending work. **It stops there — nothing is submitted.** Review the plan, reply with approval (`all` / `1, 3, 5` / `urgent only` / `skip`) to trigger `canvas-execute`.
+If `courses.yaml` is still empty (first run), CC asks which courses to handle and writes the config for you — you don't type IDs. Then `canvas-scan` produces `runs/<today>/plan.json` plus a markdown table of pending work. **It stops there — nothing is dispatched until you approve.** Reply with (`all` / `1, 3, 5` / `urgent only` / `skip`) to trigger `canvas-execute`.
 
 If `scan canvas` doesn't trigger the skill, type `/canvas-scan` explicitly. If hooks aren't firing (no SessionStart context message at the top), re-check that `python setup.py` actually rewrote `.claude/settings.json`.
 

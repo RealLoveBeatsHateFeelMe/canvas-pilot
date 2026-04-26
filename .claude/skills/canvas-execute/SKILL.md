@@ -27,7 +27,7 @@ Dispatcher for Canvas Pilot. This skill is the **execute** half of the scan/exec
 
 **If `plan.json` doesn't exist or is >24h old → STOP and tell the user to run `/canvas-scan` first.** Do not invent a plan, do not dispatch anything, do not guess.
 
-**This framework does NOT submit anything to Canvas on its own.** Whether a user-defined skill submits to Canvas, uploads a draft elsewhere, or just produces a file for the user to review is up to that skill. The framework's contract is: dispatch, record `result.json`, finalize.
+The framework's contract: dispatch, record `result.json`, finalize. Skills produce a draft and write `result.json` with `status: draft_ready` and a `draft_path`.
 
 ## What you do
 
@@ -300,5 +300,4 @@ If dispatch crashed mid-run (sub-skill threw, Canvas API died, etc.) and you're 
 - Do NOT scan Canvas or regenerate plan.json from scratch. If plan.json is missing or stale, hand back to `/canvas-scan`.
 - Do NOT try to rush the last approved item when context is tight. Pause (§5), report, ask. Half-finished work is worse than deferred work.
 - Do NOT fabricate `draft_path` or `status` in the ledger. If a sub-skill returned `error`, record `error` — don't round up to `draft_ready`.
-- Do NOT submit anything to Canvas. The framework's API client is read-only by design. Submission is the user's call, performed manually after reviewing the draft.
 - Do NOT forget to remove the `.scan_in_progress` marker. A wedged Stop gate is the most common operator error.

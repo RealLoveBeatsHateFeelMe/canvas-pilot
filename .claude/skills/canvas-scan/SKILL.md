@@ -34,13 +34,27 @@ Because the two skills are invoked in two separate Skill tool calls, there is a 
 
 ## What you do
 
+### 0. Pre-flight: handle empty courses.yaml (first-run config)
+
+Before scanning, check `courses.yaml`. If its `routes:` section is empty or all-commented (i.e. fresh clone, never configured), this is a first-run setup. **Do NOT error out and do NOT scan with an empty route list.** Instead, follow the configuration flow described in [CLAUDE.md "Helping the student configure"](../../../CLAUDE.md):
+
+1. Run `python -m src.canvas_client --probe` to list active courses.
+2. Show the human-readable course names to the student, ask which to handle. Don't make them type or copy IDs.
+3. For each chosen course, ask which skill handles it (default: `canvas-skip` for first-time setup).
+4. Write `courses.yaml`'s `routes:` and update `SECRETS.md`'s `Active courses` table from the probe data.
+5. Proceed with steps 1–6 below.
+
+The student should never see "course_id" / "user_id" / "probe" or be asked to copy numbers.
+
 ### 1. Sanity check
 
 ```bash
 python -m src.canvas_client --probe
 ```
 
-If this fails (token expired, network down), STOP. Tell the user the specific error and stop. Do not write `plan.json` (there's nothing real to plan).
+If this fails:
+- **Token mode**: token expired or network down. Tell the user the specific error and stop. Do not write `plan.json`.
+- **Cookie mode**: a 401 raises `CanvasSessionExpired` with a clear message pointing back to `python -m src.canvas_login`. Surface that message to the user and stop.
 
 ### 2. Scan for pending assignments
 

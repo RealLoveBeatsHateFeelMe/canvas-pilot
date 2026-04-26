@@ -55,4 +55,3 @@ Useful when:
 
 - Do NOT mark anything as `draft_ready` — `skipped` is the honest status when the framework didn't produce work.
 - Do NOT try to fetch content from external platforms. If the assignment depends on something outside Canvas, that's exactly why it's routed here.
-- Do NOT call any submit endpoint. The public framework's API client is read-only.

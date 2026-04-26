@@ -33,7 +33,7 @@ The interesting part — *how* a particular kind of assignment gets handled — 
 
 ## What this is NOT
 
-- **Not an automated submitter.** The Canvas API client is read-only by design. The framework reads your assignments, dispatches them to your skills, and produces drafts. Whether and how you submit is your decision (manual upload, your skill calls a different API, whatever).
+- **Not an automated submitter — by design and by principle.** The Canvas API client ships read-only, and we don't accept PRs that add submission helpers. Auto-submitting AI-generated work to a graded LMS is academic-integrity territory we deliberately stay out of. Skills produce drafts; the student reviews and submits manually.
 - **Not a "do my homework for me" tool.** It's a routing scaffold; the value is in the skills you write. You're responsible for whatever those skills do.
 - **Not coupled to any LLM provider.** It runs inside Claude Code, and your skills can invoke whatever tools CC offers, but there's no API key for an LLM here — CC handles that.
 
@@ -42,11 +42,11 @@ The interesting part — *how* a particular kind of assignment gets handled — 
 ```bash
 git clone https://github.com/<you>/canvas-pilot.git
 cd canvas-pilot
-python setup.py                     # one-shot: configure local paths in settings.json
-cp .env.example .env                # then fill in CANVAS_TOKEN
-cp SECRETS.example.md SECRETS.md    # then fill in your courses
-pip install requests pyyaml
+python setup.py            # one-shot: configure local paths in settings.json
+pip install requests       # cookie-mode users also: pip install playwright && python -m playwright install chromium
 ```
+
+Configure auth — see [SETUP.md §1](./SETUP.md) for the **token vs cookie** decision (depends on whether your school lets students self-issue API tokens).
 
 Open the folder in Claude Code (`claude` from the repo root), and say:
 
@@ -54,7 +54,7 @@ Open the folder in Claude Code (`claude` from the repo root), and say:
 scan canvas
 ```
 
-CC invokes the `canvas-scan` skill, lists pending items, and stops. Reply with `all` / `1, 3` / `urgent only` / `skip` to control what gets dispatched. Full setup walkthrough: [SETUP.md](./SETUP.md).
+On first run, CC walks you through configuring `courses.yaml` and `SECRETS.md` itself — you don't type course IDs by hand. Then it lists pending assignments and stops. Reply with `all` / `1, 3` / `urgent only` / `skip` to control what gets dispatched.
 
 ## How to write your own skill
 
@@ -127,12 +127,13 @@ Valid `status` values: `draft_ready`, `submitted`, `skipped`, `error`. The Stop-
 │       └── canvas-skip/       # Framework: manual-todo fallback
 ├── src/
 │   ├── canvas_client.py       # Read-only Canvas API helpers
+│   ├── canvas_login.py        # Playwright cookie capture (CANVAS_AUTH=cookie)
 │   └── report.py              # REPORT.md aggregator
 ├── runs/                      # Daily output (gitignored). plan.json, REPORT.md, drafts.
-├── courses.yaml               # course_id → skill routing
-├── .env.example               # CANVAS_TOKEN + CANVAS_BASE template
+├── courses.yaml               # course_id → skill routing (CC populates from probe)
+├── .env.example               # CANVAS_AUTH + CANVAS_BASE template
 ├── SECRETS.example.md         # Per-quarter identifier schema
-├── SETUP.md                   # First-run walkthrough
+├── SETUP.md                   # First-run walkthrough (decision tree at §1)
 ├── CLAUDE.md                  # Project entry that CC auto-loads
 └── setup.py                   # One-shot path-rewriter
 ```

@@ -37,7 +37,7 @@ def main():
     lines.append("- Framework skills: .claude/skills/canvas-{scan,execute,skip}/SKILL.md")
     lines.append("- User-defined skills: .claude/skills/canvas-*/  (whatever the user adds)")
     lines.append("- Routing config: courses.yaml (course_id → skill mapping)")
-    lines.append("- API client: src/canvas_client.py (READ-ONLY GETs only — no submit code)")
+    lines.append("- API client: src/canvas_client.py (read-only — GET endpoints only)")
     lines.append("- Daily output: runs/<today>/")
     lines.append("- Cross-day dedup ledger: runs/_processed.json")
     lines.append("")
