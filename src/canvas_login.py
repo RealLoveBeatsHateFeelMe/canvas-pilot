@@ -1,34 +1,45 @@
 """Playwright-based Canvas login — captures session cookie for `CANVAS_AUTH=cookie`.
 
 Use this when your school disallows self-issued personal access tokens.
-Run once initially and again whenever the cookie expires (typically 24h).
 
-    python -m src.canvas_login
+You normally don't run this directly. `canvas_client` calls it as a subprocess
+the first time it sees a missing or expired cookie, so the daily user-facing
+flow is just `scan canvas` — a Chromium window pops up, you log in, it closes.
+This module is the underlying primitive; you can still run it manually for
+debugging:
 
-Flow (semi-manual on purpose — SSO selectors vary per school, so we don't try to
-automate them):
+    python -m src.canvas_login            # auto mode (default)
+    python -m src.canvas_login --manual   # legacy press-Enter flow
 
+Auto mode (default):
   1. Reads CANVAS_WEB_BASE from .env (or derives from CANVAS_BASE).
   2. Opens a headed Chromium window using a PERSISTENT browser profile at
      `.cookies/playwright-profile/`. Persistence carries Duo / SSO IDP
      "remember this device" trust cookies between runs, so subsequent runs
      skip the 2FA push (until the 30-day Duo trust window expires).
-  3. Waits for you to complete SSO + 2FA in the window manually.
-  4. After you press Enter, captures `_normandy_session` and `_csrf_token`
-     cookies, URL-unquotes the CSRF token (Canvas writes 422 if unquoted with %),
-     and writes everything to .cookies/canvas_session.json.
+  3. Polls the browser context every 1.5s for the `_normandy_session` cookie.
+     As soon as it appears (= SSO completed, Canvas redirected to dashboard),
+     visits `/profile/settings` to ensure `_csrf_token` is also set, then
+     captures both cookies and closes the window.
+  4. Hard cap: 5 minutes. If the user never completes login, returns exit
+     code 3 so callers know it's a user-cancel, not a transient failure.
 
-The CSRF token is unquoted ONCE here at capture time; canvas_client.py does NOT
-re-unquote when it loads, so tokens that legitimately contain '%' aren't corrupted.
+Manual mode (--manual):
+  Same as auto except step 3 waits for `input()` instead of polling — used
+  when an SSO chain doesn't actually set `_normandy_session` until after
+  multiple post-login redirects, and the auto loop would close the window
+  prematurely. Rare; reserved for debugging.
 
-First run: complete SSO + 2FA in the browser, press Enter. ~5 min.
-Subsequent runs (when the Canvas session cookie expires, ~24h):
-  - If the user ticked "Remember this device" on the first run's 2FA page
-    (most providers offer this; not all schools enable it): ~15 seconds —
-    browser auto-redirects through SSO, no 2FA push, press Enter.
-  - Otherwise: full ceremony again (~5 min). Functionally identical, just
-    slower. Cookie auth works fine without remember-me; it's just a
-    convenience optimization.
+Exit codes:
+  0  success — cookie file written
+  1  environment / playwright not installed
+  2  cookies missing after login completed (CSRF token never appeared)
+  3  timeout — user did not finish login within 5 minutes (auto mode only)
+
+The CSRF token is URL-unquoted ONCE here at capture time; canvas_client.py
+does NOT re-unquote when it loads, so tokens that legitimately contain '%'
+aren't corrupted.
+
 If wedged: `rm -rf .cookies/playwright-profile/` and re-run.
 """
 from __future__ import annotations
@@ -36,11 +47,15 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent
+
+AUTO_TIMEOUT_SEC = 300   # 5 min hard cap on user finishing SSO+2FA
+POLL_INTERVAL_SEC = 1.5  # how often to check for session cookie
 
 
 def _load_env() -> None:
@@ -71,7 +86,19 @@ def _derive_web_base() -> str | None:
     return api_base
 
 
+def _wait_for_session_cookie(context, deadline: float) -> bool:
+    """Poll context cookies until `_normandy_session` appears or deadline passes."""
+    while time.monotonic() < deadline:
+        cookies = context.cookies()
+        if any(c["name"] == "_normandy_session" for c in cookies):
+            return True
+        time.sleep(POLL_INTERVAL_SEC)
+    return False
+
+
 def main() -> int:
+    auto = "--manual" not in sys.argv[1:]
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -100,13 +127,17 @@ def main() -> int:
     print(f"Opening browser to {web_base}/login")
     print(f"  Profile dir: {profile_dir}")
     print()
-    print("In the browser window:")
-    print("  1. Complete SSO / 2FA if prompted.")
-    print("     (Optional: if 2FA shows a 'Remember this device' / 'Trust")
-    print("      browser' checkbox, ticking it lets subsequent runs skip 2FA")
-    print("      until that window expires. Not required — daily 2FA also works.)")
-    print("  2. Wait until your Canvas Dashboard appears.")
-    print("  3. Switch back here and press Enter.")
+    if auto:
+        print("Complete SSO + 2FA in the browser window.")
+        print("This window will close automatically once login is detected")
+        print(f"(timeout: {AUTO_TIMEOUT_SEC // 60} min).")
+        print("  Tip: tick 'Remember this device' on the 2FA page if offered —")
+        print("  next renewal then takes ~15s with no 2FA push.")
+    else:
+        print("In the browser window:")
+        print("  1. Complete SSO / 2FA if prompted.")
+        print("  2. Wait until your Canvas Dashboard appears.")
+        print("  3. Switch back here and press Enter.")
     print()
 
     with sync_playwright() as p:
@@ -117,19 +148,32 @@ def main() -> int:
             user_data_dir=str(profile_dir),
             headless=False,
         )
-        # Persistent context launches with a default page already attached.
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(f"{web_base}/login")
 
-        try:
-            input("Press Enter once you see the Canvas Dashboard... ")
-        except (EOFError, KeyboardInterrupt):
-            print("Aborted.", file=sys.stderr)
-            context.close()
-            return 1
+        if auto:
+            deadline = time.monotonic() + AUTO_TIMEOUT_SEC
+            got_session = _wait_for_session_cookie(context, deadline)
+            if not got_session:
+                print(
+                    f"ERROR: timeout — no Canvas session cookie after "
+                    f"{AUTO_TIMEOUT_SEC} s. Login not completed.",
+                    file=sys.stderr,
+                )
+                context.close()
+                return 3
+        else:
+            try:
+                input("Press Enter once you see the Canvas Dashboard... ")
+            except (EOFError, KeyboardInterrupt):
+                print("Aborted.", file=sys.stderr)
+                context.close()
+                return 1
 
         # Visit /profile/settings to ensure _csrf_token is set on the response.
-        # Some SSO flows leave it unset on the dashboard.
+        # Some SSO flows leave it unset on the dashboard. In auto mode this
+        # also guards against the rare race where _normandy_session lands a
+        # poll-tick before the CSRF cookie does.
         page.goto(f"{web_base}/profile/settings")
         try:
             page.wait_for_load_state("networkidle", timeout=10_000)
@@ -149,14 +193,14 @@ def main() -> int:
     if not session_cookie:
         print(
             "ERROR: _normandy_session cookie not found — login likely incomplete.\n"
-            "       Make sure you reached the Dashboard before pressing Enter.",
+            "       Make sure you reached the Dashboard before the window closed.",
             file=sys.stderr,
         )
         return 2
     if not csrf_cookie:
         print(
             "ERROR: _csrf_token cookie not found.\n"
-            "       Try visiting /profile/settings manually before pressing Enter.",
+            "       Try `python -m src.canvas_login --manual` to debug.",
             file=sys.stderr,
         )
         return 2
@@ -176,9 +220,6 @@ def main() -> int:
     print()
     print(f"OK Cookies captured. Wrote {cookie_path}")
     print(f"   domain={out['domain']}  csrf_token_len={len(out['csrf_token'])}")
-    print()
-    print("Verify with:")
-    print("   CANVAS_AUTH=cookie python -m src.canvas_client --probe")
     return 0
 
 

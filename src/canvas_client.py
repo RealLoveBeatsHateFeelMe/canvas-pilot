@@ -9,9 +9,13 @@ Two auth modes (controlled by `CANVAS_AUTH` env var, default `token`):
 - `token`  — Bearer token from `CANVAS_TOKEN`. Use when your school lets
              you self-issue a personal access token.
 - `cookie` — alternative for schools that disallow self-issued tokens.
-             Reads `.cookies/canvas_session.json` written by
-             `python -m src.canvas_login`. A 401 raises
-             `CanvasSessionExpired` pointing back to canvas_login.
+             Reads `.cookies/canvas_session.json` written by `canvas_login`.
+             First-time use (file missing) and 401 mid-session both auto-launch
+             `python -m src.canvas_login --auto` as a subprocess — a Chromium
+             window pops up, user logs in, window closes, request retries.
+             User never needs to run `canvas_login` directly. Set
+             `CANVAS_NO_AUTO_RELOGIN=1` to disable (then a missing/expired
+             cookie raises `CanvasSessionExpired` like the old behavior).
 
 Usage:
     python -m src.canvas_client --probe
@@ -26,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -79,37 +84,97 @@ _session.headers.update({
     "Accept": "application/json+canvas-string-ids, application/json",
 })
 
+_COOKIE_PATH = ROOT / ".cookies" / "canvas_session.json"
+
 if AUTH_MODE == "token":
     _session.headers["Authorization"] = f"Bearer {TOKEN}"
 else:
-    cookie_path = ROOT / ".cookies" / "canvas_session.json"
-    if not cookie_path.exists():
-        raise RuntimeError(
-            f"CANVAS_AUTH=cookie but {cookie_path} not found. "
-            f"Run: python -m src.canvas_login"
+    def _load_cookies_from_disk() -> bool:
+        """Read .cookies/canvas_session.json into _session. Return False if missing."""
+        if not _COOKIE_PATH.exists():
+            return False
+        cookie_data = json.loads(_COOKIE_PATH.read_text(encoding="utf-8"))
+        _session.cookies.clear()
+        _session.cookies.set(
+            cookie_data["session_cookie_name"],
+            cookie_data["session_cookie_value"],
+            domain=cookie_data["domain"],
+            path="/",
         )
-    cookie_data = json.loads(cookie_path.read_text(encoding="utf-8"))
-    _session.cookies.set(
-        cookie_data["session_cookie_name"],
-        cookie_data["session_cookie_value"],
-        domain=cookie_data["domain"],
-        path="/",
-    )
-    # Canvas CSRF token is session-scoped; same value works for the lifetime
-    # of the session. Setting it as a default header is harmless on GETs
-    # (Canvas ignores it) and saves a per-request hook. The value stored in
-    # canvas_session.json is already URL-unquoted by canvas_login.py — do
-    # NOT unquote again here (would corrupt tokens that legitimately
-    # contain '%').
-    _session.headers["X-CSRF-Token"] = cookie_data["csrf_token"]
+        # Canvas CSRF token is session-scoped; same value works for every write
+        # for the lifetime of the session. Setting it as a default header is harmless
+        # on GETs (Canvas ignores it) and saves a per-request hook. The value stored
+        # in canvas_session.json is already URL-unquoted by canvas_login.py — do not
+        # unquote again here (would corrupt tokens that legitimately contain '%').
+        _session.headers["X-CSRF-Token"] = cookie_data["csrf_token"]
+        return True
 
-    def _detect_session_expired(resp, *args, **kwargs):
+    def _relogin_subprocess() -> bool:
+        """Launch `python -m src.canvas_login --auto` and wait for it.
+        Returns True iff it exited 0. CANVAS_NO_AUTO_RELOGIN=1 disables this."""
+        if os.environ.get("CANVAS_NO_AUTO_RELOGIN") == "1":
+            return False
+        print(
+            "[canvas_client] Canvas cookie missing or expired — "
+            "opening browser to log in (Chromium window will pop up).",
+            file=sys.stderr,
+        )
+        env = {**os.environ, "CANVAS_NO_AUTO_RELOGIN": "1"}
+        rc = subprocess.run(
+            [sys.executable, "-m", "src.canvas_login", "--auto"],
+            cwd=str(ROOT),
+            env=env,
+        ).returncode
+        if rc == 0:
+            return True
+        print(
+            f"[canvas_client] canvas_login exited rc={rc}; auto-relogin failed.",
+            file=sys.stderr,
+        )
+        return False
+
+    # Wrap _session.request to retry once on 401 after re-login.
+    # Both the first-time case (no cookie file) and the 24h-expiry case
+    # land here: first-time has no Cookie header at all → Canvas 401s →
+    # we relogin → retry succeeds. 24h-expiry has stale cookie → 401 →
+    # relogin → retry. _retrying flag prevents recursion if relogin
+    # itself somehow fails to fix the auth.
+    _original_request = _session.request
+    _retrying = {"in_progress": False}
+
+    def _request_with_relogin(method, url, **kwargs):
+        resp = _original_request(method, url, **kwargs)
+        if (
+            resp.status_code == 401
+            and not _retrying["in_progress"]
+            and os.environ.get("CANVAS_NO_AUTO_RELOGIN") != "1"
+        ):
+            _retrying["in_progress"] = True
+            try:
+                if _relogin_subprocess() and _load_cookies_from_disk():
+                    resp = _original_request(method, url, **kwargs)
+            finally:
+                _retrying["in_progress"] = False
         if resp.status_code == 401:
             raise CanvasSessionExpired(
-                "Canvas session cookie expired (401). "
-                "Re-run: python -m src.canvas_login"
+                "Canvas session expired (401). Auto-relogin disabled or failed. "
+                "Run `python -m src.canvas_login` manually to debug."
             )
-    _session.hooks["response"].append(_detect_session_expired)
+        return resp
+
+    _session.request = _request_with_relogin
+
+    # Initial cookie load — if no file exists, kick off first-time login now
+    # so importing canvas_client is enough to "have a working session". If
+    # subprocess says success but the cookie file still won't load, that's a
+    # bug we'd rather surface here than discover via mysterious 401s later.
+    if not _load_cookies_from_disk():
+        if not (_relogin_subprocess() and _load_cookies_from_disk()):
+            raise RuntimeError(
+                f"CANVAS_AUTH=cookie but {_COOKIE_PATH} not found and "
+                f"auto-relogin failed or disabled. "
+                f"Run: python -m src.canvas_login"
+            )
 
 
 def _parse_link_header(header: str) -> dict[str, str]:

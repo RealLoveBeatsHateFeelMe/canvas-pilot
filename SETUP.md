@@ -23,8 +23,8 @@ Both modes give you the same `canvas-scan` / `canvas-execute` framework. The tra
 
 | | Token | Cookie |
 |---|---|---|
-| Setup time | 1 min | 5–10 min first run, ~15 sec/day after |
-| Auth lifetime | ~1 year | ~24 h (re-login daily; ~15 sec with persistent profile) |
+| Setup time | 1 min | 5–10 min first run, ~15 sec/day after — and the renewal is **automatic**, you never run a login command, the browser just pops up on its own when scan needs it |
+| Auth lifetime | ~1 year | ~24 h, transparently renewed by `scan canvas` |
 | Browser dependency | None | Headless Chromium (~150 MB, one-time install) |
 
 ---
@@ -73,31 +73,23 @@ CANVAS_WEB_BASE=https://canvas.<your-school>.edu
 # CANVAS_TOKEN unused — leave blank or remove the line.
 ```
 
-Capture your first cookie:
+That's it for setup. **You don't run any login command.** The first time you say `scan canvas` (§6 below), `canvas_client` notices there's no cookie file yet, opens a Chromium window automatically, and waits for you to log in:
 
-```bash
-python -m src.canvas_login
-```
-
-A Chromium window opens at your school's Canvas login. **First run** (full SSO + 2FA expected):
-
-1. Log in normally (school username, password)
+1. Log in normally in the browser (school username, password)
 2. Complete 2FA (Duo push / Microsoft Authenticator / etc.)
 3. Wait until your Canvas Dashboard appears
-4. Switch to the terminal and **press Enter** — that signals "I'm logged in, capture cookies now". The script then visits `/profile/settings` to refresh the CSRF token, reads the relevant cookies, writes them to `.cookies/canvas_session.json`, and saves the browser profile under `.cookies/playwright-profile/`.
 
-> **Optional convenience**: if the 2FA page has a "Remember this device" / "Trust this browser" / "Don't ask again" checkbox, ticking it (before approving) lets subsequent runs skip 2FA for some window — typically 30 days. **It's optional, not required.** Without it, you just do full 2FA every time the Canvas cookie expires (~daily). Same functionality either way.
+The window then closes itself, the cookies get written to `.cookies/canvas_session.json`, and `scan canvas` continues. **First run is ~5 minutes** (full SSO + 2FA). After that, the persistent browser profile under `.cookies/playwright-profile/` makes renewal ~15 seconds — every subsequent time the cookie expires (~24h), `scan canvas` pops the browser, you watch it auto-redirect through SSO, the window closes, scan continues.
+
+> **Strongly recommended on first run**: when 2FA shows a "Remember this device" / "Trust this browser" / "Don't ask again" checkbox, **tick it before approving**. That lets subsequent renewals skip the 2FA push for the trust window (typically 30 days) — making them ~15s instead of ~5min. Without it, you re-do full 2FA every cookie expiry.
 
 Both `.cookies/canvas_session.json` and `.cookies/playwright-profile/` are gitignored.
 
-**Subsequent runs** (Canvas session cookie expires every ~24 h): same command, `python -m src.canvas_login`.
+**When the remember-device window expires** (typically 30 days for Duo): the next renewal goes through full 2FA anyway. Re-tick if you want another 30 days of fast logins.
 
-- If you ticked "Remember device" on first run: browser auto-redirects through SSO, no 2FA push, you press Enter. **~15 seconds.**
-- If you didn't tick (or your school doesn't offer the option): full ceremony again — username, password, 2FA push, Approve, Enter. **~5 minutes.** Functionally identical, just slower.
+**If something gets wedged** (corrupt profile, mysterious login loop): `rm -rf .cookies/playwright-profile/`. The next `scan canvas` will trigger a fresh full SSO.
 
-**When the remember-device window expires** (typically 30 days for Duo): full ceremony anyway. Re-tick if you want another 30 days of fast logins.
-
-**If something gets wedged** (corrupt profile, mysterious login loop): `rm -rf .cookies/playwright-profile/`. One full SSO and you're back.
+**Disabling auto-relogin** (debugging only): set `CANVAS_NO_AUTO_RELOGIN=1` in `.env`. With this on, a missing/expired cookie raises `CanvasSessionExpired` instead of opening the browser, and you can manually run `python -m src.canvas_login --manual` if you want the legacy press-Enter flow.
 
 Continue to §3.
 
@@ -153,10 +145,10 @@ If `scan canvas` doesn't trigger the skill, type `/canvas-scan` explicitly. If h
 
 **`CANVAS_TOKEN not set`** in token mode. `.env` not loaded, or you set `CANVAS_AUTH=token` but didn't paste the token. Make sure you copied `.env.example` to `.env` (not just edited the example) and the token line has no quotes around the value.
 
-**`CanvasSessionExpired`** from cookie mode. The Canvas session cookie expired (typically ~24 h). Re-run `python -m src.canvas_login`.
+**`CanvasSessionExpired`** from cookie mode. Auto-relogin failed or is disabled. Either `CANVAS_NO_AUTO_RELOGIN=1` is set in `.env` (remove it), or the auto-relogin subprocess hit a 5-minute timeout because login wasn't completed in the browser. Re-run scan; if it persists, try `python -m src.canvas_login --manual` to debug interactively.
 
-**Cookie capture fails (`_normandy_session cookie not found`).** Login probably didn't reach Dashboard before you hit Enter, or the SSO chain stalled. Check the browser — make sure you're at the actual Canvas Dashboard URL (e.g. `canvas.<your-school>.edu/?login_success=1`) before pressing Enter. If the SSO loop won't complete, delete `.cookies/playwright-profile/` and try again.
+**Cookie capture fails (`_normandy_session cookie not found`).** The browser closed before SSO finished setting the session cookie. In auto mode the script polls every 1.5s and closes as soon as `_normandy_session` appears, so this almost always means the SSO chain stalled at an IDP page. Run `python -m src.canvas_login --manual` to drive it manually and watch where it hangs. If the profile is the problem, `rm -rf .cookies/playwright-profile/` and retry.
 
-**`raise_for_status()` 401 on probe.** Token is wrong/expired (token mode), or the cookie file's session value got invalidated server-side (cookie mode). Token: regenerate in Approved Integrations. Cookie: re-run `canvas_login`.
+**`raise_for_status()` 401 on probe.** Token mode: token is wrong/expired — regenerate in Approved Integrations. Cookie mode: should not happen normally — `_request_with_relogin` retries 401 once after auto-relogin. If you still see this, auto-relogin is failing silently. Run `python -m src.canvas_login --manual` and check its exit code.
 
 **Different OS.** The hook commands in `.claude/settings.json` use `python` (not `python3`). On macOS/Linux you may need to symlink `python` → `python3` or hand-edit settings.json. The scripts themselves are platform-independent.
