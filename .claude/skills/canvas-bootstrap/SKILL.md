@@ -230,9 +230,121 @@ If the student maps some patterns in a main course but not all of them (e.g., co
 
 This soft-suggest does **not** apply to folded courses — picking a folded course number means the whole course, no partial coverage to warn about.
 
-### 4. For each accepted mapping, prepare skeleton + route entry
+### 4. Walk through the design dialogue per mapping
 
-Build the skeleton string from the template in the appendix below. Substitute these placeholders from the fingerprint:
+For each accepted mapping (pattern or folded-course), don't immediately write the skeleton. First **walk the student through a 6-step design dialogue** — collecting what THIS skill will do for THIS course. The dialogue results get written into the skeleton; the skeleton is the sub-skill's playbook for every future dispatch.
+
+**Critical conversation rules** (this skill talks to non-engineer students):
+
+- **Plain language only.** Do NOT say "API" / "endpoint" / "fingerprint" / "submission_types" / "list_modules" / "get_front_page". Say "I looked around the course" not "I called list_modules". The student is an art / writing / non-CS major.
+- **Hide the process, show the result.** When you've fetched info, just tell the student what you found, not the function name.
+- **Default ask the question.** If the student says "你帮我想" / "you design" / "我没想法" → give **ONE** suggestion (not multiple options) and ask "这个行吗?". Don't dump 3 alternatives.
+- **Never recommend skill names**, same as before.
+- **Walk one mapping at a time.** Finish all 6 TODOs for skill A → confirm with student → write skeleton A → then start skill B's dialogue. Don't interleave.
+
+**The 6 TODOs in the dialogue**:
+
+#### TODO 1 — where the assignment instructions live (Claude does the work, silent fetch)
+
+**Before opening dialogue**, Claude already silently runs:
+- `cv.get_front_page(course_id)` — find external links / instructor site
+- `cv.list_modules(course_id)` — find Homework / Reading modules
+- `cv.list_folders(course_id)` — find Files area
+- `cv.list_quizzes(course_id)` — if any pattern has `online_quiz`
+
+Then summarize **in plain language**, no API names:
+
+> "我替你看了一圈这门课。题目说明看起来在 `<found_location>` 这里。
+> 如果你觉得不对告诉我，对的话我替你存下来——下次写作业 skill 自动来这儿抓。"
+
+If nothing found:
+
+> "这门课我没找到题目说明的固定位置——可能每周指引直接 paste 在
+> assignment 里，也可能我漏看了。你平时去哪找作业说明的？"
+
+Save the location string into `spec_location` for the skeleton.
+
+#### TODO 2 — verification items (use this exact opening line)
+
+Open with **this verbatim**:
+
+> "我建议在开始写作业之前，设计几个验证，这样写完以后可以验证是否达标了。
+> 你有什么想法吗？还是要让我设计？"
+
+If student lists checks → save verbatim into `verification_items` (a numbered or bulleted list).
+
+If student says "你帮我想" / "you design": give **ONE** concrete proposal of 3-5 check items based on the course shape. Pick examples that fit the assignment kind. After student approves or modifies, save into `verification_items`.
+
+Examples of what "concrete" looks like (NOT a checklist to memorize — adapt to the course):
+- 文件名按 `set<N>_problem<M>.py` 格式 (`ls runs/<today>/<dir>/` 看)
+- 跑 `pytest` 全过
+- 字数在 250-500 字之间 (`wc -w draft.txt` 看)
+- 至少引 3 篇 reading (`grep -cE "(<author>, <year>)" draft.txt ≥ 3`)
+
+Each item should produce a **number or yes/no**, not a feeling.
+
+#### TODO 3 — student's writing workflow (default open, no Claude proposal first)
+
+**Default: blank**. Ask the open question:
+
+> "你平常写这门课的作业按什么流程？
+> 比如先看示例、再写 draft、再跑测试、再清理——你的步骤是什么？
+> 把你自己的流程说一遍——这个 skill 以后写作业就按你说的来跑。"
+
+Save student's reply **verbatim** into `student_workflow` (numbered list).
+
+If (and only if) student says "你帮我想" / "我没想法" / "你设计一个":
+Give **ONE** complete workflow proposal as numbered steps, e.g.:
+
+> 1. 拉 spec（从 TODO 1 那个位置）
+> 2. 写 draft 到 work dir
+> 3. 跑 TODO 2 的验证
+> 4. 走 TODO 5 润色（如有）
+> 5. 写 result.json 交付
+>
+> "这个流程行吗？"
+
+After student says yes (or modifies it), save into `student_workflow`.
+
+**This is the most important TODO** — it's the actual sub-skill execution path. The skeleton's TODO 3 will literally say "execute these steps". Don't skip the dialogue here.
+
+#### TODO 4 — run verification (Claude auto-fills, no dialogue)
+
+Don't ask the student. Just write into the skeleton:
+
+> When draft is done, run the checks from TODO 2.
+> Save results to `verification.log` next to the draft.
+> All pass → go to TODO 5.
+> Any fail → fix the draft, **don't fudge the numbers**.
+
+#### TODO 5 — polish step (student decides)
+
+Open:
+
+> "draft 写完 + 通过验证之后，要不要再过一遍润色？
+> 文字读一遍 / review 代码 / 检查文件版面 / 还是不用直接交？"
+
+Save student's reply into `polish_step`:
+- "不用直接交" → write "Skip; proceed to TODO 6."
+- Lists steps → write them as numbered list.
+- "你帮我想" → give ONE suggestion based on what the assignments look like.
+
+**Claude does NOT do the polish itself** — the skeleton's TODO 5 will tell future-Claude to ask the student to review and modify, then the student answers OK before TODO 6 fires.
+
+#### TODO 6 — result.json (Claude auto-fills)
+
+Don't ask. Write the schema + a notes hint. Student doesn't touch this section.
+
+---
+
+**After collecting all 6 TODO answers** (per mapping), proceed to §5 (write skeleton + commit route).
+
+Skeleton must include:
+
+- `<!-- UNFILLED_SKELETON v1 -->` HTML comment **as the very first line of body** (after frontmatter). This guards against the case where the dialogue gets interrupted and the skeleton gets dispatched anyway with empty TODO content. Once student has actually completed the dialogue and approved each TODO, **remove the sentinel** before saving.
+- A blockquote starting with `> **STOP if you are Claude reading this from canvas-execute dispatch.**` — explicitly tells dispatch to write `result.json status="error" deferred_to_next_run=true` and stop. This is the self-guard.
+
+**Placeholder substitutions for skeleton template** (see appendix):
 
 | placeholder | source |
 |---|---|
@@ -240,15 +352,12 @@ Build the skeleton string from the template in the appendix below. Substitute th
 | `{course_name}` | from the fingerprint |
 | `{course_id}` | from the fingerprint |
 | `{today}` | `date +%Y-%m-%d` |
-| `{pattern_summary}` | `"<pat1>" and "<pat2>" and ...` (joined human-readable) — for the frontmatter `description` field. **For folded-course mappings** (no patterns), use `"all assignments in {course_name}"` instead. |
-| `{pattern_block}` | indented bullet list of `count×  norm_name    [submission_types]` lines for THIS course's mapped patterns. **For folded-course mappings**, render `"  - (no recurring patterns at min_freq=3 yet — total {N} assignments seen, mostly one-offs at the time of bootstrap)"` instead. |
-| `{empty_or_thin}` | `"empty for 100% of items in this course"` if that course has ≥80% of items with empty `description`, otherwise `"thin (only short blurbs in most items)"` |
-| `{empty_desc_warning_if_applicable}` | only emit the "real spec lives elsewhere" callout when the empty-description ratio crosses 80%; otherwise emit empty string |
-
-Skeleton must include:
-
-- `<!-- UNFILLED_SKELETON v1 -->` HTML comment **as the very first line of body** (after frontmatter)
-- A blockquote starting with `> **STOP if you are Claude reading this from canvas-execute dispatch.**` — explicitly tells dispatch to write `result.json status="error" deferred_to_next_run=true` and stop. This is the self-guard that prevents Claude from "guessing" the assignment when the student hasn't filled the body.
+| `{pattern_summary}` | `"<pat1>" and "<pat2>" and ...`. **Folded courses**: `"all assignments in {course_name}"` |
+| `{pattern_block}` | indented bullet list `count×  norm_name [submission_types]`. **Folded courses**: `"  - (no recurring patterns yet — total {N} assignments seen)"` |
+| `{spec_location}` | from TODO 1 dialogue |
+| `{verification_items}` | from TODO 2 dialogue (formatted as numbered list) |
+| `{student_workflow}` | from TODO 3 dialogue (formatted as numbered list) |
+| `{polish_step}` | from TODO 5 dialogue (steps OR "skip directly to TODO 6") |
 
 ### 5. Write skeletons + commit routes (idempotent)
 
@@ -312,13 +421,21 @@ Print a final summary:
     .claude/skills/canvas-globalquiz/SKILL.md
     .claude/skills/canvas-engscan/SKILL.md
 
+Each skill captures the design dialogue we just walked through —
+where the spec lives, what to verify, your workflow, what to polish.
+The skill will follow your design every time canvas-execute dispatches
+into it.
+
 Next:
-  1. Open each SKILL.md and fill the 4 TODO sections (spec location,
-     draft production, verification approach, result.json wiring).
-  2. When you remove the <!-- UNFILLED_SKELETON v1 --> sentinel, this
-     skill is "ready" — canvas-execute will dispatch into it.
-  3. New skills usually become discoverable immediately (Claude Code
-     hot-reloads SKILL.md). If `/canvas-scan` can't dispatch your new
+  1. Each skill is ready to run as-is. The first time canvas-execute
+     dispatches into one, it'll execute your TODO 3 workflow on a real
+     assignment.
+  2. If you decide later that the workflow / verification / polish
+     should change, run `/设计 skill` (or `design a skill`) again
+     and pick the same course — it'll re-do the dialogue and update
+     the SKILL.md.
+  3. New skills become discoverable immediately (Claude Code hot-
+     reloads SKILL.md). If `/canvas-scan` can't dispatch your new
      skill, restart CC and try again.
 ```
 
@@ -326,12 +443,14 @@ End your turn. Do NOT invoke canvas-scan or canvas-execute from here — those h
 
 ## What you MUST NOT do
 
-- Do **not** write any course-specific knowledge into the skeleton (no institution names, course numbers, instructor identities). Skeletons are templates — fingerprint MEASUREMENTS are facts; everything else is the student's job.
-- Do **not** label courses with a "major type" (code / quiz / document). Just list the patterns. Students decide what their course is.
+- Do **not** write any course-specific knowledge into the skeleton beyond what the dialogue collected (no institution names, course numbers, instructor identities baked into the template). The skeleton is a template; the dialogue fills it; everything else stays generic.
+- Do **not** label courses with a "major type" (code / quiz / document). Just list the patterns and let the dialogue surface what's needed.
 - Do **not** recommend skill names. Students choose. The format is `<numbers> → <name>` — they supply the name.
-- Do **not** write any TODO solving logic. The 4 TODO sections in the skeleton are intentionally open.
+- Do **not** write the **content** of the assignment for the student. The skeleton's TODO 3 captures the student's WORKFLOW (their numbered steps); it does NOT bake in solutions, draft text, code logic, or quiz answers. Those are produced fresh by sub-skill at dispatch time, on each new assignment.
+- Do **not** auto-do TODO 5 (polish) for the student. The skeleton tells future-Claude to PROMPT the student; future-Claude does not edit the student's content itself.
 - Do **not** auto-fan-out one mapping into multiple skills. Per-course is per-course.
 - Do **not** invoke `canvas-execute` or other sub-skills. This skill only writes files and config.
+- Do **not** use engineering jargon in the dialogue ("API", "endpoint", "submission_types", "fingerprint", "list_modules"). Students are non-CS majors. Use natural language: "I looked around the course", "题目说明", "硬性要求", "你的流程".
 
 ---
 
@@ -374,46 +493,75 @@ allowed-tools:
 
 {empty_desc_warning_if_applicable}
 
-## What you do — fill these in
+## How this skill executes (filled in by the design dialogue with the student)
 
-### 1. TODO: where does the real spec live?
+### TODO 1 — where the assignment instructions live
 
-The Canvas description is {empty_or_thin} for this course. Where do you go to
-read what each assignment actually wants? (front_page link? a Files folder?
-external instructor site? attached PDF? textbook chapter?) Document it here so
-future-you doesn't re-discover it.
+{spec_location}
 
-### 2. TODO: produce your draft
+If this turns out to be wrong, the student can run `/设计 skill` again
+to overwrite — `canvas-bootstrap` will re-do the silent fetch and
+re-confirm the location.
 
-Write the deliverable into the work dir at:
-`runs/<today>/<course_slug>__<assignment_slug>/`
+### TODO 2 — what counts as "done" (run BEFORE writing, plan the checks)
 
-Describe step by step what "produce a draft" means for this assignment kind —
-what to fetch, what to compute, what file format to write.
+Before writing the draft, plan how you'll verify it. The student
+designed these checks during bootstrap:
 
-### 3. TODO: how do you verify the draft is correct BEFORE submitting?
+{verification_items}
 
-This is the section students skip and regret. Before claiming done:
+Each check should produce a **number or yes/no**, not a feeling.
+Write them into a small script (`check.sh` / `check.py`) sitting in
+the work dir; TODO 4 runs it.
 
-- What numeric constraints does the spec impose? (page count, file count,
-  function count, line/sentence/word limit, character limit, ...)
-- How do you measure those properties on YOUR draft and produce a number?
-- What's a sanity check that catches "the file is empty" / "wrong format" /
-  "missing required section"?
+### TODO 3 — workflow (the student's own steps, executed automatically every run)
 
-Vibes are not verification. The check must produce a number you can look at,
-not a feeling. Write it as a script and put output in `verification.log` next
-to the draft.
+The student told canvas-bootstrap how they personally write this kind of
+assignment. Follow their numbered steps in order:
 
-### 4. Write result.json before returning
+{student_workflow}
+
+This is the spine of the skill. Don't improvise around it — if the steps
+don't fit a particular assignment, surface that to the student rather than
+silently deviate.
+
+### TODO 4 — run TODO 2's verification
+
+After draft is written:
+
+1. Run the verification script from TODO 2.
+2. Save its output to `verification.log` next to the draft.
+3. **All checks pass** → proceed to TODO 5.
+4. **Any check fails** → revise the draft until the failing checks pass.
+   Do NOT fudge the numbers. Do NOT mark `draft_ready` until verification
+   actually passes.
+
+### TODO 5 — polish (per the student's decision at design time)
+
+{polish_step}
+
+If polish steps exist: tell the student "draft is at `<path>`, all
+verification passed. Want me to walk through the polish steps now, or
+do you want to look at it yourself first?" Wait for their answer.
+
+**Don't auto-polish or auto-edit content.** Polish is the student's call
+on their own work — Claude only prompts.
+
+### TODO 6 — write result.json
 
 ```json
-{{"status": "draft_ready", "draft_path": "runs/<today>/<dir>/<file>", "notes": "..."}}
+{{"status": "draft_ready", "draft_path": "runs/<today>/<dir>/<file>", "notes": "<one line summary the user sees in REPORT.md>"}}
 ```
 
+`notes` should mention: did verification pass? did the student polish?
+anything the user should look at before uploading?
+
 Valid `status` values: `draft_ready` / `submitted` / `skipped` / `error`.
+This skill produces drafts; the user uploads manually unless explicitly
+told otherwise.
+
 The Stop hook (`check-router-complete.py`) blocks the session from ending
-until this exists.
+until this `result.json` exists.
 ````
 
 The triple-backtick block uses `````` (6 backticks) as the fence so the inner
