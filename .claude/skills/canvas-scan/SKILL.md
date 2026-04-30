@@ -34,17 +34,32 @@ Because the two skills are invoked in two separate Skill tool calls, there is a 
 
 ## What you do
 
-### 0. Pre-flight: handle empty courses.yaml (first-run config)
+### 0. First-run check — empty routes dispatches canvas-bootstrap
 
-Before scanning, check `courses.yaml`. If its `routes:` section is empty or all-commented (i.e. fresh clone, never configured), this is a first-run setup. **Do NOT error out and do NOT scan with an empty route list.** Instead, follow the configuration flow described in [CLAUDE.md "Helping the student configure"](../../../CLAUDE.md):
+Before doing anything else, read `courses.yaml`:
 
-1. Run `python -m src.canvas_client --probe` to list active courses.
-2. Show the human-readable course names to the student, ask which to handle. Don't make them type or copy IDs.
-3. For each chosen course, ask which skill handles it (default: `canvas-skip` for first-time setup).
-4. Write `courses.yaml`'s `routes:` and update `SECRETS.md`'s `Active courses` table from the probe data.
-5. Proceed with steps 1–6 below.
+```python
+import yaml
+from pathlib import Path
+cfg = yaml.safe_load(Path("courses.yaml").read_text(encoding="utf-8")) or {}
+routes = cfg.get("routes") or {}
+```
 
-The student should never see "course_id" / "user_id" / "probe" or be asked to copy numbers.
+If `routes` is empty (fresh clone, never configured) **or** every entry has been commented out, the student has no per-course skills installed yet. Do NOT continue scanning — there's nothing to route.
+
+Instead, **invoke `canvas-bootstrap` via the Skill tool**, passing this short context:
+
+> "courses.yaml.routes is empty — student needs to set up per-course skills before scan can produce a useful plan. Run the fingerprint flow and write skeletons + routes."
+
+`canvas-bootstrap` will list recurring assignment patterns per course, collect skill names from the student, and write `.claude/skills/canvas-<name>/SKILL.md` skeletons + `courses.yaml` routes. When it returns, **stop this scan**. Tell the student:
+
+> "Routes installed. Open each new SKILL.md and fill the 4 TODOs. Then run `/canvas-scan` again to produce a plan."
+
+Skill registration is hot-reloaded by Claude Code, so the new skeletons become discoverable immediately — but the cleanest path is letting the student fill bodies first, then re-scan in their next turn. They re-trigger `/canvas-scan` themselves.
+
+If `routes` is non-empty, proceed to §1 normally.
+
+The student should never see "course_id" / "user_id" or be asked to copy numbers — `canvas-bootstrap` handles that.
 
 ### 1. Sanity check
 
