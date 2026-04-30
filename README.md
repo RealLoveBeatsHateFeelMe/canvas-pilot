@@ -56,6 +56,8 @@ scan canvas
 
 On first run, CC walks you through configuring `courses.yaml` and `SECRETS.md` itself — you don't type course IDs by hand. Then it lists pending assignments and stops. Reply with `all` / `1, 3` / `urgent only` / `skip` to control what gets dispatched.
 
+**Adding a course mid-term?** Tell CC `design a skill` (or `设计 skill`) any time after first-run — it'll run the same fingerprint+naming flow on the new course and write a fresh SKILL.md skeleton + route entry.
+
 ## How to write your own skill
 
 Pick one recurring assignment type — say, weekly reading annotations.

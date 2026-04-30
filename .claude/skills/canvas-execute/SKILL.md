@@ -285,8 +285,22 @@ After the urgent banner, group items by status:
 - ...
 
 ## Errors (N)
-- ...
+- **Course Label** / Assignment Title
+  - skill: `canvas-<name>` → `.claude/skills/canvas-<name>/SKILL.md`
+  - error notes: {result.json `notes` verbatim}
+  - **Debug checklist** (open the SKILL.md and tick through):
+    - [ ] `<!-- UNFILLED_SKELETON v1 -->` sentinel still present? Remove it after you fill the 4 TODOs.
+    - [ ] Frontmatter `name:` matches the directory name (`canvas-<name>`)?
+    - [ ] Frontmatter `allowed-tools:` includes everything the skill uses (Bash / Read / Write / Edit / WebFetch)?
+    - [ ] §1 TODO answered (where does the real spec live)?
+    - [ ] §2 TODO answered (how does this skill produce a draft)?
+    - [ ] §3 TODO answered (how do you verify the draft before submitting)?
+    - [ ] §4 result.json — does the skill actually write `runs/<today>/<dir>/result.json`?
+    - [ ] If `notes` mentions a specific file path or API call: does that path exist? does the API call work standalone?
+  - After fixing, re-run `/canvas-scan` — the assignment will reappear in the plan (deferred items re-enter on next scan).
 ```
+
+If `Errors (N)` is empty, omit the heading entirely. The checklist exists because raw `error notes` is hostile to a first-time student — they get "X failed" without knowing whether the problem is their SKILL.md, the framework, or Canvas. The checklist gives them a 30-second sanity scan + a specific re-run command.
 
 `src/report.py` has a `write_report` helper if you want to use it.
 

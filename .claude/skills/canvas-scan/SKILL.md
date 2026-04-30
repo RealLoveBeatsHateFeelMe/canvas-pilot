@@ -67,9 +67,17 @@ The student should never see "course_id" / "user_id" or be asked to copy numbers
 python -m src.canvas_client --probe
 ```
 
-If this fails:
-- **Token mode**: token expired or network down. Tell the user the specific error and stop. Do not write `plan.json`.
-- **Cookie mode**: a 401 raises `CanvasSessionExpired` with a clear message pointing back to `python -m src.canvas_login`. Surface that message to the user and stop.
+If this fails, STOP and produce a **specific, actionable** error message — don't just print the traceback and walk away. Match the failure mode and give the user concrete next steps:
+
+| Symptom in the traceback / output | What it means | Tell the user |
+|---|---|---|
+| `401 Unauthorized` or `Invalid access token` | Token mode: token expired or wrong | "Your `CANVAS_TOKEN` is invalid. Open `.env`, get a fresh token from Canvas → Account → Settings → 'New Access Token', paste it. See [SETUP.md §1](../../../SETUP.md) for the full token vs cookie decision." |
+| `CanvasSessionExpired` raised by canvas_client | Cookie mode: session expired | "Your Canvas session expired. Run `python -m src.canvas_login --auto` to re-capture cookies (Chromium pops up, log in once, ~15s if Duo trust is fresh)." |
+| `FileNotFoundError: .env` or `CANVAS_TOKEN not set` | First-time setup never finished | "No `.env` file found. Copy `.env.example` to `.env`, then pick `CANVAS_AUTH=token` or `CANVAS_AUTH=cookie` — see [SETUP.md §1](../../../SETUP.md) for the decision tree." |
+| `ConnectionError` / `Timeout` / DNS failure | Network down | "Can't reach Canvas (`{specific_error}`). Check VPN / wifi / Canvas status page; retry when network's back." |
+| Anything else | Unexpected | Print the traceback verbatim + ask the user to paste it back. Don't guess. |
+
+Do NOT write `plan.json` in any of these cases — there's nothing real to plan, a half-written plan would mislead. **STOP** after printing the actionable message.
 
 ### 2. Scan for pending assignments
 

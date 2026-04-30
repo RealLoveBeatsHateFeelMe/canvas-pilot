@@ -79,3 +79,5 @@ The student should never see the words "course_id", "user_id", "probe", or be as
 - Framework skills: `.claude/skills/canvas-{scan,execute,skip}/SKILL.md`
 - Framework auth: `src/canvas_client.py` (read-only API), `src/canvas_login.py` (Playwright cookie capture for `CANVAS_AUTH=cookie`)
 - User-defined skills: `.claude/skills/canvas-*/` (whatever you add)
+
+**Adding a new course mid-term?** Tell CC `design a skill` (or `设计 skill`) — this triggers `canvas-bootstrap`, which surveys recurring patterns in the new course and writes a SKILL.md skeleton + courses.yaml route entry. Same flow as the first-run setup, just on demand.
