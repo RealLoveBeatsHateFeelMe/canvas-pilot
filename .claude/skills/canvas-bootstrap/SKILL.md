@@ -150,6 +150,41 @@ the table, not what to type):
 
 Render columns with whitespace alignment, not pipe-tables — patterns are facts, not a data grid.
 
+### 2b. Tier-sort patterns by configuration ease, recommend the easiest first
+
+A first-time student facing a 5-pattern table doesn't know which to start with — that's Bug 14. Sort patterns within the main group by **configuration-ease tier** (easier first), and end the render with a one-line "start here" recommendation.
+
+**Tier rules** — use ONLY fingerprint fields already exposed (`submission_types`, `norm_name`):
+
+| Tier | When |
+|---|---|
+| ⭐ Tier 1 | `submission_types` is a subset of `{online_upload, online_text_entry}` AND `norm_name` (lowercased) does NOT contain `project` / `set` / `problem` / `quiz`. (Typical: writing-class assignments — PDF in / PDF out, no external sites, no test runs.) |
+| ⭐⭐ Tier 2 | `submission_types` contains `online_quiz`. (Reading-quiz / weekly quiz — Canvas-only, but quiz auto-take has anti-cheat risk and may need extra config.) |
+| ⭐⭐⭐ Tier 3 | `norm_name` contains `project` / `set` / `problem` (suggests programming / problem set). (Code courses — usually need an external instructor site, scaffold downloads, test runs.) |
+| ⭐⭐⭐⭐ Tier 4 | `norm_name` mentions a third-party graded-homework platform (textbook publishers' homework systems, etc. — recognizable by brand name in the assignment titles). (Hardest — need to log into and reverse-engineer that platform on top of Canvas.) |
+| Tier 2.5 (default) | None of the above — stick in the middle, sort by `count` descending within the tier as a tiebreak. |
+
+Within the main group, sort patterns by tier ascending (⭐ first), tie-break by `count` descending. Folded courses are not tiered — they sit at the bottom as before.
+
+**After the table + examples, append a recommendation line**:
+
+Chinese:
+```
+建议先从最简单的开始 — ⭐ {Tier 1 候选 number}. {pattern norm_name}（{course name}）。
+写作类通常拿 PDF 出 PDF，一两步搞定，配完立刻能看到效果；代码课要外部网站 + 测试，第三方平台课还要逆向那个平台，留到最后。
+```
+
+English:
+```
+Suggested start: ⭐ {Tier 1 candidate number}. {pattern norm_name} ({course name}).
+Writing-style assignments are usually PDF-in / PDF-out — one or two steps and you'll see results.
+Code courses need external instructor sites + test runs; third-party platform courses need an extra login + reverse-engineering on top — leave those for last.
+```
+
+If no Tier 1 candidate exists, point at the lowest-tier pattern available and say so explicitly: "no obvious 'easy' start — your easiest is Tier 2 ({number}. {norm_name}), which is a quiz."
+
+**Do NOT show the tier symbols (⭐ / ⭐⭐ / ⭐⭐⭐ / ⭐⭐⭐⭐) in the main pattern table** — they're a sort key + a one-line recommendation, not a column. Cluttering the table with tier badges undoes the goal of keeping the table simple.
+
 ### 2c. Example generation rules
 
 After the table, render **2-4 example mapping lines** based on the actual fingerprint data. Each example has the format:

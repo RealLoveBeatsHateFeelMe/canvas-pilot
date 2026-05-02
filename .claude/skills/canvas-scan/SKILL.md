@@ -67,17 +67,17 @@ The student should never see "course_id" / "user_id" or be asked to copy numbers
 python -m src.canvas_client --probe
 ```
 
-If this fails, STOP and produce a **specific, actionable** error message — don't just print the traceback and walk away. Match the failure mode and give the user concrete next steps:
+If this fails, STOP and produce a **user-facing** message — not a traceback dump, not internal vocabulary. Match the failure mode below; **CC handles the recovery, the user only answers domain questions**:
 
-| Symptom in the traceback / output | What it means | Tell the user |
-|---|---|---|
-| `401 Unauthorized` or `Invalid access token` | Token mode: token expired or wrong | "Your `CANVAS_TOKEN` is invalid. Open `.env`, get a fresh token from Canvas → Account → Settings → 'New Access Token', paste it. See [SETUP.md §1](../../../SETUP.md) for the full token vs cookie decision." |
-| `CanvasSessionExpired` raised by canvas_client | Cookie mode: session expired | "Your Canvas session expired. Run `python -m src.canvas_login --auto` to re-capture cookies (Chromium pops up, log in once, ~15s if Duo trust is fresh)." |
-| `FileNotFoundError: .env` or `CANVAS_TOKEN not set` | First-time setup never finished | "No `.env` file found. Copy `.env.example` to `.env`, then pick `CANVAS_AUTH=token` or `CANVAS_AUTH=cookie` — see [SETUP.md §1](../../../SETUP.md) for the decision tree." |
-| `ConnectionError` / `Timeout` / DNS failure | Network down | "Can't reach Canvas (`{specific_error}`). Check VPN / wifi / Canvas status page; retry when network's back." |
-| Anything else | Unexpected | Print the traceback verbatim + ask the user to paste it back. Don't guess. |
+| Symptom (CC-internal) | What CC says to the user (no jargon) |
+|---|---|
+| `401 Unauthorized` or `Invalid access token` | "Canvas isn't accepting our credentials. Want me to open the browser so you can log in again? (That's the simplest fix — takes ~15s if Canvas remembered your device.)" — then if user says yes, CC re-runs the login flow itself. |
+| `CanvasSessionExpired` raised by canvas_client | Same as above — "Canvas session expired, want me to pop the browser?" CC handles re-login itself, user just logs in. |
+| `FileNotFoundError: .env` or `CANVAS_TOKEN not set` | "Looks like setup never finished — let me walk you through it." Then CC drives the first-time configure flow from `CLAUDE.md` "Helping the student configure" itself. **Do not** tell the user to copy/edit `.env` by hand. |
+| `ConnectionError` / `Timeout` / DNS failure | "Can't reach Canvas right now — looks like a network issue. Check your wifi / VPN, then say 'try again' when you're back online." |
+| Anything else | "Hit something I didn't expect — let me show you what came back: `{short error}`. Want me to dig in, or skip scanning for now?" |
 
-Do NOT write `plan.json` in any of these cases — there's nothing real to plan, a half-written plan would mislead. **STOP** after printing the actionable message.
+Do NOT write `plan.json` in any of these cases — there's nothing real to plan, a half-written plan would mislead. **STOP** after printing the user-facing message.
 
 ### 2. Scan for pending assignments
 
@@ -198,6 +198,60 @@ Which ones? Reply `all` to do everything, numbers to pick (e.g. `3,4`), or `skip
 ```
 
 When a section has rows, drop the `— none` / `— 无` marker and render the heading + table. When empty, render only the heading with the inline marker (no empty table).
+
+#### 5b'. Recommendation block (mandatory after the tables)
+
+The two-table render answers "what's pending" + "what's urgent". It does NOT answer "what should I do first?". Without that answer, students stare at the table not knowing how to start. Add a Recommendation block immediately after Section 2.
+
+The block has three parts, in order:
+
+1. **"我做不了 / Can't do"**: a small bulleted subsection listing items the framework will skip (routes to `canvas-skip`, or items the current auth mode can't handle — e.g. `online_quiz` items under `CANVAS_AUTH=cookie`). Skip the subsection entirely if the list is empty.
+2. **"建议 / Suggested"**: one sentence picking ONE item as the recommended starting point — usually the most urgent item that the framework CAN do. Frame as "try this one first, see how it goes". Reasoning is optional but helpful when the choice is non-obvious.
+3. **Reply hint**: keep the existing one-line `all / 编号 / skip` prompt — it stays at the end.
+
+**Chinese template (extended example)**:
+
+```markdown
+**三天内 due** — 无
+
+**七天内 due**
+
+| # | 课 | 作业 | due | 已交 |
+|---|---|---|---|---|
+| 1 | <课> | <quiz 类作业> | 周日 23:59 | 未交 |
+| 2 | <课> | <写作 HW> | 周二 23:59 | 未交 |
+| 3 | <课> | <代码作业> | 周一 08:00 | 未交 |
+
+**我做不了**
+- 1. <课> <quiz 作业> — quiz 类型，cookie 模式跑不了
+
+建议：先批 3（最紧急），看看效果。觉得 OK 再批 2。
+
+要做哪几项？全做回"全部"，挑几项回编号（例 "3,4"），不做回"跳过"。
+```
+
+**English template (extended example)**:
+
+```markdown
+**Due within 3 days** — none
+
+**Due within 7 days**
+
+| # | Course | Assignment | Due | Submitted |
+|---|---|---|---|---|
+| 1 | <course> | <quiz item> | Sun 23:59 | no |
+| 2 | <course> | <writing HW> | Tue 23:59 | no |
+| 3 | <course> | <code assignment> | Mon 08:00 | no |
+
+**Can't do**
+- 1. <course> <quiz item> — quiz type, can't run under cookie auth
+
+Suggested: try 3 first (most urgent), then come back for 2 once you see how that goes.
+
+Which ones? Reply `all` to do everything, numbers to pick (e.g. `3,4`), or `skip` to pass.
+```
+
+Drop the `**Can't do**` subsection if it would be empty. Drop the recommendation sentence if there are zero items the framework can do (rare). The reply hint always stays.
 
 **Do NOT add to the user-facing render**:
 

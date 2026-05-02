@@ -304,6 +304,27 @@ If `Errors (N)` is empty, omit the heading entirely. The checklist exists becaus
 
 `src/report.py` has a `write_report` helper if you want to use it.
 
+### 9. Next step
+
+After the Done / Skipped / Errors sections, append a `## Next step` block with **one specific suggestion** based on what just happened. Don't dump data without telling the student what to do next.
+
+Pick the suggestion based on actual run state (in priority order):
+
+- **If `Errors (N) > 0`**: "Look at the first error — open `.claude/skills/canvas-<name>/SKILL.md` and check whether the §1–§4 TODOs are still unfilled. Then re-run `/canvas-scan` and that item reappears."
+- **Else if `Skipped (N) > 0` for manual courses**: "These ones are manual — open them in Canvas yourself. The list is preserved at the top so you don't forget."
+- **Else if `Done (N) > 0`**: "Drafts are at `runs/<today>/<dir>/` (each has a `result.json` pointing at the artifact). Review, then upload manually if the SKILL.md doesn't auto-submit."
+- **Else (nothing approved)**: "Nothing dispatched this run. When you want to come back, say `scan canvas`."
+
+Template (literal — don't add bullets if the data doesn't justify them):
+
+```markdown
+## Next step
+
+<one sentence based on the rule above>
+```
+
+Keep it short. The point is the student lands on a clear action, not a wall of data.
+
 ### Crash-path fallback
 
 If dispatch crashed mid-run (sub-skill threw, Canvas API died, etc.) and you're recovering in a follow-up turn before marker removal: make sure every item in assignments.json has a `result.json` (write `status: skipped, notes: "execute crashed at this item", deferred_to_next_run: true` for unfinished ones). Then the marker can be removed. Then report the crash to the user with specifics.

@@ -1,6 +1,6 @@
 # Canvas Pilot
 
-A framework for routing recurring Canvas assignments to skills you write yourself, run inside [Claude Code](https://claude.com/claude-code).
+Canvas Pilot turns the homework you do every week — readings, weekly quizzes, programming sets, lab reports — into something Claude Code can draft for you. You review before anything leaves your laptop. Runs inside [Claude Code](https://claude.com/claude-code).
 
 ```
 [Canvas API]
