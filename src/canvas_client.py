@@ -152,6 +152,7 @@ class _PlaywrightBackend:
     """
 
     PROFILE_DIR = ROOT / ".cookies" / "playwright-profile"
+    COOKIES_PATH = ROOT / ".cookies" / "session.json"
     LOGIN_TIMEOUT_SEC = 300  # 5 min for first-time SSO+2FA
     LOGIN_POLL_INTERVAL = 1.5
 
@@ -176,11 +177,37 @@ class _PlaywrightBackend:
             headless=headless,
         )
 
+    def _load_saved_cookies(self) -> None:
+        """Restore cookies from disk into the current context. Best-effort
+        — corrupt / malformed file is ignored and treated as no cookies
+        (the next _auth_works check will then fail and trigger login)."""
+        if not self.COOKIES_PATH.exists():
+            return
+        try:
+            cookies = json.loads(self.COOKIES_PATH.read_text(encoding="utf-8"))
+            if cookies:
+                self._ctx.add_cookies(cookies)
+        except Exception:
+            pass
+
+    def _save_cookies(self, cookies: list) -> None:
+        """Persist cookies to disk so the next Python process can skip
+        the browser popup. Chromium's user_data_dir only persists cookies
+        with explicit expiry; Canvas's session cookie is session-scoped
+        and gets dropped on context close, so the persistent profile alone
+        isn't enough — we have to round-trip through our own JSON."""
+        try:
+            self.COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            self.COOKIES_PATH.write_text(json.dumps(cookies), encoding="utf-8")
+        except Exception:
+            pass  # best-effort; failure means next run pops browser, no big deal
+
     def _ensure_session(self) -> None:
         if self._auth_checked and self._ctx is not None:
             return
         if self._ctx is None:
             self._ctx = self._open_context(headless=True)
+            self._load_saved_cookies()
         if not self._auth_works():
             self._ctx.close()
             self._ctx = None
@@ -188,6 +215,7 @@ class _PlaywrightBackend:
             self._ctx = self._open_context(headless=True)
             if cookies:
                 self._ctx.add_cookies(cookies)
+                self._save_cookies(cookies)
         self._auth_checked = True
 
     def _auth_works(self) -> bool:
@@ -245,6 +273,7 @@ class _PlaywrightBackend:
             self._ctx = self._open_context(headless=True)
             if cookies:
                 self._ctx.add_cookies(cookies)
+                self._save_cookies(cookies)
             self._auth_checked = True
             return self._request(method, url, retried=True, **kwargs)
         if r.status == 401:
