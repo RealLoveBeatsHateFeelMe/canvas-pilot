@@ -34,32 +34,48 @@ Because the two skills are invoked in two separate Skill tool calls, there is a 
 
 ## What you do
 
-### 0. First-run check — empty routes dispatches canvas-bootstrap
+### 0. First-run check — unconfigured repo dispatches canvas-setup or canvas-bootstrap
 
-Before doing anything else, read `courses.yaml`:
+Before doing anything else, check the repo's setup state. Two distinct unconfigured states:
 
 ```python
-import yaml
+import os, yaml
 from pathlib import Path
-cfg = yaml.safe_load(Path("courses.yaml").read_text(encoding="utf-8")) or {}
-routes = cfg.get("routes") or {}
+
+env_ok = False
+env_path = Path(".env")
+if env_path.exists():
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        if k.strip() == "CANVAS_BASE" and v.strip():
+            env_ok = True
+            break
+
+cfg = yaml.safe_load(Path("courses.yaml").read_text(encoding="utf-8")) if Path("courses.yaml").exists() else {}
+routes = (cfg or {}).get("routes") or {}
+routes_nonempty = bool(routes)
 ```
 
-If `routes` is empty (fresh clone, never configured) **or** every entry has been commented out, the student has no per-course skills installed yet. Do NOT continue scanning — there's nothing to route.
+**If `env_ok` is False** → fresh install, never configured. Dispatch `canvas-setup` via the Skill tool with this context:
 
-Instead, **invoke `canvas-bootstrap` via the Skill tool**, passing this short context:
+> ".env is missing or CANVAS_BASE is empty — fresh install, student has never configured the project. Run the full first-run flow."
 
-> "courses.yaml.routes is empty — student needs to set up per-course skills before scan can produce a useful plan. Run the fingerprint flow and write skeletons + routes."
+Do NOT proceed to §1. Do NOT print a traceback if `.env` doesn't exist. canvas-setup will return when the student is fully configured (or stops mid-flow). On its return, scan exits — student can re-trigger `scan canvas` whenever they want.
 
-`canvas-bootstrap` will list recurring assignment patterns per course, collect skill names from the student, and write `.claude/skills/canvas-<name>/SKILL.md` skeletons + `courses.yaml` routes. When it returns, **stop this scan**. Tell the student:
+**Else if `env_ok` but `routes_nonempty` is False** → Canvas connection is configured but no per-course skills. Dispatch `canvas-bootstrap`:
 
-> "Routes installed. Open each new SKILL.md and fill the 4 TODOs. Then run `/canvas-scan` again to produce a plan."
+> "courses.yaml.routes is empty — Canvas connection works but student needs to design per-course skills. Run the fingerprint flow."
 
-Skill registration is hot-reloaded by Claude Code, so the new skeletons become discoverable immediately — but the cleanest path is letting the student fill bodies first, then re-scan in their next turn. They re-trigger `/canvas-scan` themselves.
+When bootstrap returns, **stop this scan**. Tell the student:
 
-If `routes` is non-empty, proceed to §1 normally.
+> "Routes installed. Open each new SKILL.md and fill the TODOs. Then run `scan canvas` again to produce a plan."
 
-The student should never see "course_id" / "user_id" or be asked to copy numbers — `canvas-bootstrap` handles that.
+**Else** (`env_ok` and `routes_nonempty`): proceed to §1 normally.
+
+The student should never see "course_id" / "user_id" or be asked to copy numbers — canvas-setup and canvas-bootstrap handle that.
 
 ### 1. Sanity check
 
