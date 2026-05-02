@@ -2,7 +2,7 @@
 
 > **⚠️ CC: do NOT read this file's instructions back to the user.**
 >
-> This file is a human-only reference for developers who clone the repo and want to hand-configure it. The user-facing setup conversation is driven by `CLAUDE.md` "Helping the student configure" — that section governs what CC says and does. If you (CC) catch yourself about to tell the user "open .env and edit X" or "run pip install Y" or "go find Approved Integrations in Canvas", that is a bug — stop, and do those things yourself with your Edit / Bash / Write tools. The user has Edit-capable CC running; they should not also need to be a developer.
+> This file is a human-only reference for developers who clone the repo and want to hand-configure it. The user-facing setup flow is driven by [.claude/skills/canvas-setup/SKILL.md](./.claude/skills/canvas-setup/SKILL.md) — that skill governs what CC says and does on first run. If you (CC) catch yourself about to tell the user "open .env and edit X" or "run pip install Y" or "go find Approved Integrations in Canvas", that is a bug — stop, and do those things yourself with your Edit / Bash / Write tools. The user has Edit-capable CC running; they should not also need to be a developer.
 >
 > The non-CC reader (a developer poking around) can use the walkthrough below.
 

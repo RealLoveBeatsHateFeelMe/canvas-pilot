@@ -2,7 +2,7 @@
 
 > **Read [README.md](./README.md) first for the project overview.** This file is the slim entry pointer that Claude Code auto-loads on session start. Anything substantive lives elsewhere.
 >
-> **First time on this machine?** Open Claude Code in this folder and tell it what you want done — CC walks first-time users through setup conversationally (see "Helping the student configure" below). Hook paths use `${CLAUDE_PROJECT_DIR}` so they work regardless of clone location. Developers who want manual control: see [SETUP.md](./SETUP.md).
+> **First time on this machine?** Open Claude Code in this folder and tell it what you want done — CC walks first-time users through setup via the `canvas-setup` skill. Hook paths use `${CLAUDE_PROJECT_DIR}` so they work regardless of clone location. Developers who want manual control: see [SETUP.md](./SETUP.md).
 
 This file is loaded automatically when CC starts a session in this directory. Keep it small. Per-user / per-quarter identifiers (course IDs, file IDs, instructor info) belong in **[SECRETS.md](./SECRETS.md)** which is gitignored — never hardcode them here or in any committed SKILL.md.
 
@@ -36,7 +36,7 @@ The framework's `canvas-scan` skill already encodes this rule in its long-form d
 - This project routes recurring Canvas assignments to user-written skills. The framework ships scaffolding (scan + execute + skip) but no course-specific skills.
 - Trigger: in a CC session from this directory, say `scan canvas` or `/canvas-scan`. CC invokes the scan skill, lists pending, stops. Reply with `all` / numbers / `skip` to dispatch. See `.claude/skills/canvas-scan/SKILL.md` and `canvas-execute/SKILL.md` for the full contract.
 - Auth: `.env` selects between `CANVAS_AUTH=token` (Bearer) and `CANVAS_AUTH=cookie` (Playwright session). See [SETUP.md §1](./SETUP.md) for the decision tree.
-- Configuration: `courses.yaml` (course_id → skill) and `SECRETS.md` (per-quarter identifiers). **CC populates these from probe — students don't type course IDs by hand.** See "Helping the student configure" below.
+- Configuration: `courses.yaml` (course_id → skill) and `SECRETS.md` (per-quarter identifiers). **CC populates these from probe — students don't type course IDs by hand.** First-run flow lives in [.claude/skills/canvas-setup/SKILL.md](./.claude/skills/canvas-setup/SKILL.md).
 - Output: `runs/<today>/` — `plan.json`, `assignments.json`, per-assignment work dirs with `result.json`, final `REPORT.md`. Cross-day dedup ledger at `runs/_processed.json`.
 
 ---

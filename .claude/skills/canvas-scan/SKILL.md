@@ -89,7 +89,7 @@ If this fails, STOP and produce a **user-facing** message — not a traceback du
 |---|---|
 | `401 Unauthorized` or `Invalid access token` | "Canvas isn't accepting our credentials. Want me to open the browser so you can log in again? (That's the simplest fix — takes ~15s if Canvas remembered your device.)" — then if user says yes, CC re-runs the login flow itself. |
 | `CanvasSessionExpired` raised by canvas_client | Same as above — "Canvas session expired, want me to pop the browser?" CC handles re-login itself, user just logs in. |
-| `FileNotFoundError: .env` or `CANVAS_TOKEN not set` | "Looks like setup never finished — let me walk you through it." Then CC drives the first-time configure flow from `CLAUDE.md` "Helping the student configure" itself. **Do not** tell the user to copy/edit `.env` by hand. |
+| `FileNotFoundError: .env` or `CANVAS_TOKEN not set` | Not configured yet. **Dispatch `canvas-setup` via the Skill tool** — that skill owns the first-run flow. Don't say anything yourself; let canvas-setup's Step 1 opener handle it. |
 | `ConnectionError` / `Timeout` / DNS failure | "Can't reach Canvas right now — looks like a network issue. Check your wifi / VPN, then say 'try again' when you're back online." |
 | Anything else | "Hit something I didn't expect — let me show you what came back: `{short error}`. Want me to dig in, or skip scanning for now?" |
 
