@@ -184,8 +184,10 @@ class _PlaywrightBackend:
         if not self._auth_works():
             self._ctx.close()
             self._ctx = None
-            self._login_interactive()
+            cookies = self._login_interactive()
             self._ctx = self._open_context(headless=True)
+            if cookies:
+                self._ctx.add_cookies(cookies)
         self._auth_checked = True
 
     def _auth_works(self) -> bool:
@@ -195,7 +197,15 @@ class _PlaywrightBackend:
         except Exception:
             return False
 
-    def _login_interactive(self) -> None:
+    def _login_interactive(self) -> list:
+        """Open a headed Chromium and poll for Canvas auth via the
+        BrowserContext's APIRequestContext (it shares cookies with all
+        tabs in the context, so it works no matter which tab the SSO
+        chain finally lands on — including the new tab a SAML auto-POST
+        often pops). On success, capture cookies BEFORE closing —
+        Chromium drops session-scoped cookies (no explicit expiry, e.g.
+        Canvas's session cookie) when a context closes, so the next
+        headless context needs them re-injected via add_cookies()."""
         print(
             "[canvas_client] Opening browser to log in to Canvas. "
             "A Chromium window will pop up.",
@@ -206,21 +216,14 @@ class _PlaywrightBackend:
         page.goto(f"{WEB_BASE}/login")
         deadline = time.monotonic() + self.LOGIN_TIMEOUT_SEC
         while time.monotonic() < deadline:
-            # Only evaluate fetch when we're on the Canvas origin — during
-            # SSO chain the page may be on the IDP (shibboleth/Duo) where
-            # `/api/v1/users/self` would resolve to the IDP, not Canvas.
             try:
-                if page.url.startswith(WEB_BASE):
-                    status = page.evaluate(
-                        "() => fetch('/api/v1/users/self', {credentials: 'include'})"
-                        "      .then(r => r.status).catch(() => 0)"
-                    )
-                    if status == 200:
-                        ctx.close()
-                        print("[canvas_client] Login detected.", file=sys.stderr)
-                        return
+                r = ctx.request.get(f"{BASE}/users/self")
+                if r.status == 200:
+                    cookies = ctx.cookies()
+                    ctx.close()
+                    print("[canvas_client] Login detected.", file=sys.stderr)
+                    return cookies
             except Exception:
-                # mid-redirect navigations destroy the JS execution context.
                 pass
             time.sleep(self.LOGIN_POLL_INTERVAL)
         ctx.close()
@@ -238,8 +241,10 @@ class _PlaywrightBackend:
             self._ctx.close()
             self._ctx = None
             self._auth_checked = False
-            self._login_interactive()
+            cookies = self._login_interactive()
             self._ctx = self._open_context(headless=True)
+            if cookies:
+                self._ctx.add_cookies(cookies)
             self._auth_checked = True
             return self._request(method, url, retried=True, **kwargs)
         if r.status == 401:
